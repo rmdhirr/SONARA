@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,7 +22,6 @@ from inference import (
     HOP_SECONDS,
     analyze_recording,
     load_model_bundle,
-    merge_candidate_events,
     make_species_prediction,
 )
 
@@ -30,750 +29,934 @@ APP_DIR = Path(__file__).resolve().parent
 MODEL_DIR = Path(os.getenv("CETUSID_MODEL_DIR", APP_DIR / "models"))
 
 st.set_page_config(
-    page_title="SONARA | Ocean Sound Explorer",
-    page_icon="🌊",
+    page_title="SONARA | Dolphin Vocalisation Analysis",
+    page_icon="🐬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
+# The pixel font is decorative; system monospace remains the fallback if Google Fonts
+# cannot be reached by the browser. Body copy stays larger than the pixel labels.
+st.markdown(
+    r"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
 :root {
-  --abyss: #071522;
-  --deep: #0b2030;
-  --panel: #102b3c;
-  --panel-hi: #15384a;
-  --line: rgba(132, 190, 202, .22);
-  --text: #e4f0f2;
-  --muted: #91aeb9;
-  --teal: #69d2ca;
-  --amber: #e9c77d;
-  --coral: #f39a83;
+  --bg: #07131f;
+  --bg-2: #0a1d2b;
+  --panel: #10283a;
+  --panel-2: #15364a;
+  --panel-3: #1b4356;
+  --line: #2d6070;
+  --line-soft: rgba(104, 200, 195, .22);
+  --ink: #edf8f2;
+  --muted: #a8c2c6;
+  --teal: #6be3cf;
+  --aqua: #83cfff;
+  --yellow: #f4d477;
+  --coral: #ff8c85;
+  --pixel-shadow: 4px 4px 0 #030a12;
 }
+html, body, [class*="css"] { font-family: 'VT323', 'Courier New', monospace; }
 .stApp {
-  background:
-    radial-gradient(ellipse at 78% 0%, rgba(30, 102, 123, .18), transparent 42%),
-    linear-gradient(180deg, #071522 0%, #0a1d2c 48%, #081725 100%);
-  color: var(--text);
+  color: var(--ink);
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(76, 146, 160, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 146, 160, .045) 1px, transparent 1px),
+    linear-gradient(180deg, #07131f 0%, #0a1b29 58%, #07131f 100%);
+  background-size: 24px 24px, 24px 24px, auto;
 }
-[data-testid="stHeader"] { background: rgba(7, 21, 34, .86); }
+[data-testid="stHeader"] { background: rgba(7, 19, 31, .94); }
+[data-testid="stToolbar"] { right: 1rem; }
 [data-testid="stSidebar"] {
-  background: linear-gradient(180deg, #0a1c2a 0%, #0d2637 100%);
-  border-right: 1px solid var(--line);
+  background: #091a27;
+  border-right: 2px solid var(--line);
 }
-[data-testid="stSidebar"] > div { padding-top: 1.4rem; }
-.block-container { max-width: 1440px; padding-top: 1.8rem; padding-bottom: 2.5rem; }
-h1, h2, h3 { color: var(--text) !important; letter-spacing: -.025em; }
-p, li, label, .stMarkdown { color: var(--text); }
+[data-testid="stSidebar"] > div { padding-top: 1.15rem; }
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: var(--muted); }
+.block-container { max-width: 1280px; padding: 1.45rem clamp(1rem, 3vw, 2.4rem) 2.5rem; }
+
+/* Type system: readable retro terminal copy, pixel font reserved for micro-labels. */
+h1, h2, h3, h4 { color: var(--ink) !important; font-family: 'VT323', monospace !important; letter-spacing: .015em; }
+h1 { font-size: clamp(2.45rem, 5vw, 4.1rem) !important; line-height: .98 !important; }
+h2 { font-size: clamp(2rem, 3vw, 2.7rem) !important; }
+h3 { font-size: 1.85rem !important; }
+p, li, label, [data-testid="stMarkdownContainer"] { color: var(--ink); }
+p { font-size: 1.22rem; line-height: 1.35; }
 small, [data-testid="stCaptionContainer"] { color: var(--muted) !important; }
-hr { border-color: var(--line); }
-.topline {
-  color: #80a7b5; font: 600 .68rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .15em; margin-bottom: .7rem;
+[data-testid="stCaptionContainer"] p { font-size: 1.05rem; }
+hr { border-color: var(--line) !important; }
+
+.pixel-label, .topline, .brand-sub, .pixel-chip, .pixel-kicker, .status-pill, .step-index {
+  font-family: 'Press Start 2P', 'Courier New', monospace !important;
+  text-transform: uppercase;
+  letter-spacing: .035em;
 }
-.topline-dot {
-  display: inline-block; width: 7px; height: 7px; margin-right: 8px;
-  border-radius: 50%; background: var(--teal); box-shadow: 0 0 10px var(--teal);
-}
-.topline-sep { color: #466c7d; padding: 0 .45rem; }
-.brand {
-  font: 800 clamp(2rem, 4vw, 3.25rem)/.95 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .06em; color: #eaf7f6;
-}
+.topline { color: var(--aqua); font-size: .52rem; line-height: 1.8; margin: .2rem 0 .55rem; }
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.brand { color: var(--ink); font: 400 clamp(2.5rem, 5vw, 4rem)/.9 'VT323', monospace; letter-spacing: .06em; }
 .brand-mark { color: var(--teal); }
-.brand-sub {
-  color: #8db6c0; font: 600 .72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .26em; margin-top: .55rem;
+.brand-sub { color: var(--yellow); font-size: .48rem; line-height: 1.8; margin-top: .45rem; }
+.header-readout {
+  border: 2px solid var(--line); background: #0b2231; box-shadow: var(--pixel-shadow);
+  padding: .7rem .9rem; text-align: right; min-width: 180px;
 }
-.depth-readout {
-  text-align: right; border: 1px solid var(--line); border-radius: 3px;
-  background: rgba(12, 39, 55, .55); padding: .65rem .8rem; margin-top: .2rem;
-}
-.depth-readout p { margin: 0; }
-.depth-value { color: var(--teal); font: 700 1.05rem ui-monospace, monospace; letter-spacing: .18em; }
+.header-readout .big { color: var(--teal); font: 400 2rem/1 'VT323', monospace; }
+.header-readout .small { color: var(--muted); font: .5rem/1.8 'Press Start 2P', monospace; }
+
 .hero-panel {
-  position: relative; overflow: hidden; min-height: 370px; margin: 1.4rem 0 1rem;
-  padding: clamp(1.5rem, 4vw, 3.4rem); border: 1px solid rgba(105,210,202,.28);
-  border-radius: 5px;
-  background:
-    linear-gradient(105deg, rgba(8,27,42,.97) 0%, rgba(11,42,58,.94) 52%, rgba(13,55,69,.78) 100%),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(116,185,194,.045) 32px);
+  display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(220px, .8fr);
+  gap: 1.25rem; align-items: center; margin: 1.3rem 0 1.1rem;
+  padding: clamp(1.1rem, 3vw, 2.1rem); background: #0d2638;
+  border: 3px solid var(--teal); box-shadow: 6px 6px 0 #030a12;
 }
-.hero-panel:after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent 0 79px, rgba(116,185,194,.035) 80px);
+.hero-copy { min-width: 0; }
+.pixel-kicker { color: var(--yellow); font-size: .52rem; line-height: 1.9; margin-bottom: .85rem; }
+.hero-panel h1 { margin: 0 0 .7rem !important; }
+.hero-panel p { color: #c5d9d7; max-width: 650px; margin: 0; }
+.hero-visual {
+  min-width: 0; border: 2px solid var(--line); background: #071a28;
+  padding: .5rem; box-shadow: inset 0 0 0 3px rgba(107,227,207,.06);
 }
-.hero-kicker {
-  color: var(--amber); font: 600 .7rem ui-monospace, monospace;
-  letter-spacing: .18em; position: relative; z-index: 2;
+.hero-visual svg { display: block; width: 100%; height: auto; image-rendering: pixelated; shape-rendering: crispEdges; }
+.pixel-chip {
+  display: inline-block; padding: .42rem .55rem; margin-top: .9rem;
+  color: var(--teal); background: #0a1c29; border: 1px solid var(--line);
+  font-size: .45rem; line-height: 1.8;
 }
-.hero-kicker span { color: var(--teal); padding: 0 .35rem; }
-.hero-panel h1 {
-  max-width: 620px; margin: 1.1rem 0 .8rem; position: relative; z-index: 2;
-  font-size: clamp(2rem, 4vw, 3.5rem) !important; line-height: 1.06;
+
+.pixel-card {
+  border: 2px solid var(--line); background: rgba(13, 38, 55, .95);
+  padding: .9rem 1rem; box-shadow: 4px 4px 0 #030a12; height: 100%;
 }
-.hero-panel p {
-  max-width: 580px; color: #afc7ce; line-height: 1.7;
-  position: relative; z-index: 2;
-}
-.sonar-wrap {
-  position: absolute; width: 320px; height: 320px; right: 6%; top: 25px;
-  border: 1px solid rgba(105,210,202,.22); border-radius: 50%;
-  background: radial-gradient(circle, rgba(54,144,155,.15), rgba(8,30,45,.04) 68%);
-}
-.sonar-ring {
-  position: absolute; border: 1px solid rgba(105,210,202,.27); border-radius: 50%;
-  inset: 15%; 
-}
-.ring-b { inset: 30%; border-color: rgba(105,210,202,.22); }
-.ring-c { inset: 45%; border-color: rgba(105,210,202,.2); }
-.sonar-core {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-  color: var(--teal); font-size: 2.1rem; text-shadow: 0 0 18px rgba(105,210,202,.8);
-}
-.sonar-sweep {
-  position: absolute; width: 50%; height: 50%; left: 50%; top: 50%;
-  transform-origin: 0 0; border-radius: 0 100% 0 0;
-  background: linear-gradient(45deg, rgba(105,210,202,.17), transparent 68%);
-  animation: sweep 8s linear infinite;
-}
-@keyframes sweep { to { transform: rotate(360deg); } }
-.sonar-label {
-  position: absolute; color: #82b7bf; font: 600 .58rem ui-monospace, monospace;
-  letter-spacing: .12em; white-space: nowrap;
-}
-.label-a { right: -10px; top: 48%; }
-.label-b { left: -24px; bottom: 22%; }
-.steps-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: .8rem; margin: 1rem 0 2rem; }
-.step-card {
-  padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 4px;
-  background: rgba(14,42,58,.72);
-}
-.step-card span {
-  color: var(--teal); font: 700 .72rem ui-monospace, monospace; display: block; margin-bottom: .6rem;
-}
-.step-card b { color: #e6f1f2; font: 700 .7rem ui-monospace, monospace; letter-spacing: .08em; }
-.step-card p { color: var(--muted); font-size: .88rem; margin: .5rem 0 0; }
-.status-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: .5rem; padding: .42rem 0; border-bottom: 1px solid rgba(132,190,202,.1);
-  color: #b9cdd2; font-size: .82rem;
-}
-.status-pill {
-  font: 600 .6rem ui-monospace, monospace; letter-spacing: .06em;
-  padding: .18rem .42rem; border: 1px solid; border-radius: 2px;
-}
-.status-pill.ok { color: var(--teal); border-color: rgba(105,210,202,.4); }
-.status-pill.off { color: var(--coral); border-color: rgba(243,154,131,.4); }
-.stButton > button, .stDownloadButton > button {
-  border-radius: 3px; border: 1px solid rgba(105,210,202,.55);
-  background: #17485a; color: #edfbfa; font: 700 .72rem ui-monospace, monospace;
-  letter-spacing: .06em; min-height: 2.65rem;
+.pixel-card-title { color: var(--yellow); font-size: .52rem; line-height: 1.9; margin-bottom: .45rem; }
+.section-kicker { color: var(--aqua); font: .5rem/1.8 'Press Start 2P', monospace; margin: 1.2rem 0 .45rem; }
+.steps-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; margin: .6rem 0 1.2rem; }
+.step-card { background: #0d2638; border: 2px solid var(--line); box-shadow: 4px 4px 0 #030a12; padding: .85rem; min-width: 0; }
+.step-index { color: var(--teal); font-size: .55rem; margin-bottom: .6rem; }
+.step-card b { color: var(--yellow); font-size: 1.2rem; letter-spacing: .04em; }
+.step-card p { color: var(--muted); font-size: 1.08rem; margin: .3rem 0 0; }
+
+.status-row { display: flex; align-items: flex-start; justify-content: space-between; gap: .55rem; padding: .38rem 0; border-bottom: 1px dashed rgba(132,190,202,.18); color: var(--muted); }
+.status-row span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.status-pill { flex: 0 0 auto; font-size: .38rem; padding: .3rem .35rem; border: 1px solid; line-height: 1.5; }
+.status-pill.ok { color: var(--teal); border-color: var(--teal); }
+.status-pill.off { color: var(--coral); border-color: var(--coral); }
+
+/* Streamlit controls and output blocks: square pixel borders, consistent spacing. */
+.stButton > button, .stDownloadButton > button, [data-testid="stFormSubmitButton"] button {
+  min-height: 2.7rem; height: auto; white-space: normal; overflow-wrap: anywhere;
+  border-radius: 0 !important; border: 2px solid var(--teal) !important;
+  background: #17495b !important; color: var(--ink) !important;
+  font: 1.15rem 'VT323', monospace !important; letter-spacing: .04em;
+  box-shadow: 3px 3px 0 #030a12; padding: .45rem .8rem !important;
 }
 .stButton > button:hover, .stDownloadButton > button:hover {
-  border-color: var(--teal); background: #1d5a68; color: white;
+  background: #1d6170 !important; border-color: var(--yellow) !important;
 }
-.stButton > button[kind="primary"] {
-  background: #277d83; border-color: #6dd4ca; color: #fff;
-}
+.stButton > button:focus, .stDownloadButton > button:focus { outline: 2px solid var(--yellow) !important; }
 [data-testid="stMetric"] {
-  background: rgba(14,42,58,.72); border: 1px solid var(--line);
-  border-radius: 4px; padding: .85rem 1rem;
+  min-width: 0; border-radius: 0; border: 2px solid var(--line);
+  background: #0d2638; box-shadow: 4px 4px 0 #030a12; padding: .8rem .9rem;
 }
-[data-testid="stMetricLabel"] { color: var(--muted) !important; }
-[data-testid="stMetricValue"] { color: var(--teal) !important; }
+[data-testid="stMetricLabel"] { color: var(--muted) !important; font-size: 1.05rem !important; }
+[data-testid="stMetricValue"] { color: var(--teal) !important; font-family: 'VT323', monospace !important; font-size: 2.15rem !important; overflow-wrap: anywhere; }
 [data-testid="stFileUploader"] {
-  border: 1px dashed rgba(105,210,202,.42); border-radius: 4px;
-  background: rgba(13,43,57,.35); padding: .35rem;
+  border: 2px dashed var(--teal); border-radius: 0; background: rgba(13, 38, 55, .72); padding: .45rem;
 }
-[data-testid="stAlert"] { border-radius: 3px; }
-[data-testid="stDataFrame"] { border: 1px solid var(--line); }
-.stTabs [data-baseweb="tab-list"] { gap: .4rem; }
+[data-testid="stFileUploader"] section { border-radius: 0; }
+[data-testid="stAlert"] { border-radius: 0 !important; border-width: 2px !important; }
+[data-testid="stDataFrame"], [data-testid="stTable"] { border: 2px solid var(--line); }
+.stTabs [data-baseweb="tab-list"] { flex-wrap: wrap; gap: .35rem; }
 .stTabs [data-baseweb="tab"] {
-  background: rgba(14,42,58,.72); border: 1px solid var(--line);
-  border-radius: 3px 3px 0 0; color: #bdd2d7; padding: .5rem .85rem;
+  min-height: 2.35rem; background: #102b3d; border: 1px solid var(--line);
+  border-radius: 0; color: var(--ink); padding: .4rem .7rem;
 }
-.stTabs [aria-selected="true"] { border-color: var(--teal) !important; color: var(--teal) !important; }
-@media (max-width: 760px) {
-  .sonar-wrap { opacity: .22; right: -110px; top: 70px; }
-  .hero-panel { min-height: 390px; }
-  .steps-grid { grid-template-columns: 1fr; }
-  .depth-readout { display: none; }
+.stTabs [aria-selected="true"] { border: 2px solid var(--teal) !important; color: var(--teal) !important; }
+[data-baseweb="select"] > div, [data-baseweb="input"] > div, [data-baseweb="textarea"] > div {
+  border-radius: 0 !important; border-color: var(--line) !important; background: #0c2231 !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] { padding-top: .35rem; }
+[data-testid="stRadio"] label, [data-testid="stCheckbox"] label { color: var(--ink) !important; }
+[data-testid="stExpander"] { border: 1px solid var(--line); border-radius: 0; background: rgba(12,34,49,.65); }
+
+.info-strip {
+  border: 2px solid var(--yellow); background: #292b29; color: #fff2c8;
+  padding: .75rem .9rem; box-shadow: 4px 4px 0 #030a12; margin: .5rem 0 1rem;
+}
+.warning-strip { border-color: var(--coral); background: #2c2028; color: #ffe0dc; }
+.footer-line { color: var(--muted); text-align: center; font-size: 1.05rem; border-top: 1px dashed var(--line); padding-top: .8rem; margin-top: 1.5rem; }
+
+@media (max-width: 850px) {
+  .hero-panel { grid-template-columns: minmax(0, 1fr); }
+  .hero-visual { max-width: 440px; width: 100%; margin: 0 auto; }
+  .header-readout { min-width: 0; text-align: left; }
+}
+@media (max-width: 620px) {
+  .block-container { padding-left: .85rem; padding-right: .85rem; }
+  .steps-grid { grid-template-columns: minmax(0, 1fr); }
+  .topline, .brand-sub, .pixel-kicker { overflow-wrap: anywhere; }
+  .header-readout { margin-top: .5rem; }
+  [data-testid="stHorizontalBlock"] { gap: .65rem; }
+  [data-testid="stMetric"] { padding: .65rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sonar-sweep { animation: none; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
+LANGUAGES = ["English", "Bahasa Indonesia"]
+PAGE_LABELS = {
+    "English": {
+        "overview": "Mission briefing",
+        "analysis": "Dolphin detection",
+        "history": "Detection log",
+        "research": "Research bench",
+        "guide": "Field notes",
+    },
+    "Bahasa Indonesia": {
+        "overview": "Ringkasan misi",
+        "analysis": "Deteksi lumba-lumba",
+        "history": "Log deteksi",
+        "research": "Meja riset",
+        "guide": "Catatan lapangan",
+    },
+}
 
 COPY = {
     "English": {
-        "nav": "NAVIGATION",
-        "home": "Mission overview",
-        "explore": "Acoustic analysis",
-        "discoveries": "Discovery log",
-        "lab": "Research laboratory",
-        "guide": "Field guide",
         "language": "LANGUAGE / BAHASA",
-        "title": "SONARA",
-        "subtitle": "OCEAN SOUND EXPLORER",
-        "mission": "Passive acoustic exploration",
-        "home_h": "Listen beneath the surface.",
-        "home_p": "Explore underwater recordings with an AI-assisted acoustic detector. Upload a WAV file, inspect candidate vocalisations, and review how the models respond.",
-        "start": "START ACOUSTIC ANALYSIS",
-        "how": "HOW IT WORKS",
-        "status": "SYSTEM STATUS",
-        "ready": "Console ready",
-        "models": "Detector models",
-        "models_missing": "Model files not found",
-        "sample_rate": "Target sample rate",
-        "window": "Analysis window",
-        "hop": "Window step",
-        "notice_title": "Scientific note",
-        "notice": "A detection is a model-generated candidate, not confirmation of dolphin presence or species. Performance on uploaded field recordings has not been established.",
-        "explore_h": "Acoustic analysis",
-        "explore_p": "Upload an underwater WAV recording. The application resamples it to the training sample rate and scans overlapping two-second windows.",
-        "upload": "Choose a WAV recording",
-        "upload_help": "WAV audio only. Longer recordings take more time to analyze.",
+        "mission": "DOLPHIN PASSIVE ACOUSTIC MONITORING",
+        "subtitle": "DOLPHIN VOCALISATION ANALYSIS CONSOLE",
+        "header_note": "TARGET CLASS: DOLPHIN VOCALISATIONS",
+        "hero_kicker": "FIELD CONSOLE / MISSION 01",
+        "hero_title": "Find the dolphin calls in the noise.",
+        "hero_body": "SONARA scans underwater WAV recordings for candidate dolphin vocalisations. It is a focused dolphin-acoustics tool — not a general ocean-sound classifier.",
+        "hero_chip": "PRIMARY TASK: VOCALISATION / BACKGROUND DETECTION",
+        "notice_title": "READ THIS BEFORE INTERPRETING A DETECTION",
+        "notice": "A positive result is a candidate dolphin-vocalisation window, not proof of a dolphin encounter. Review the audio and treat model scores as screening outputs.",
+        "how": "THREE-STEP WORKFLOW",
+        "step1": "UPLOAD",
+        "step1p": "Add an underwater WAV recording.",
+        "step2": "DETECT",
+        "step2p": "Three detector variants scan overlapping two-second windows for dolphin-vocalisation patterns.",
+        "step3": "REVIEW",
+        "step3p": "Listen to candidate events, inspect timestamps, and export results.",
+        "analysis_title": "Dolphin-vocalisation detection",
+        "analysis_body": "The detector answers a focused question: does this two-second acoustic window resemble the dolphin-vocalisation class learned during training, rather than the negative/background class?",
+        "upload": "Underwater WAV recording",
+        "upload_help": "WAV only. Very long recordings can take longer to scan on free hosting.",
         "threshold": "Detection threshold",
-        "run": "RUN ANALYSIS",
-        "need_models": "Model artifacts are missing. Add the three detector files to the `models/` directory. See README.md.",
+        "models": "Detector variants",
+        "run": "RUN DOLPHIN DETECTION",
         "need_audio": "Upload a WAV recording to begin.",
-        "analyzing": "Preparing acoustic windows…",
-        "results": "ANALYSIS REPORT",
+        "short_audio": "The recording must be at least 2 seconds long.",
+        "invalid_audio": "The uploaded file could not be decoded as audio. Please check that it is a valid WAV file.",
+        "analyzing": "Building spectrogram windows and running the selected detectors…",
+        "analysis_complete": "Detection scan complete.",
+        "no_detectors": "No detector model files are available yet. Add the three detector .keras files to the repository's models/ folder.",
+        "results": "DETECTION REPORT",
         "duration": "Recording duration",
-        "windows": "Windows analyzed",
-        "candidate_events": "Candidate events",
-        "no_events": "No candidate events crossed the selected threshold. This does not prove that dolphin vocalisations are absent.",
-        "events_found": "Candidate acoustic events detected",
-        "model": "Model",
-        "time_start": "Start (s)",
-        "time_end": "End (s)",
-        "confidence": "Peak probability",
-        "event_count": "Events",
-        "timeline": "Detection timeline",
-        "details": "Window-level results",
-        "download_csv": "Download CSV",
-        "download_json": "Download JSON",
-        "species_h": "Experimental species stage",
-        "species_warning": "Experimental only — the demonstration-subset validation was limited (33.3% reported in this run). Do not use this output as a biological identification.",
-        "species_run": "RUN EXPERIMENTAL SPECIES CLASSIFIER",
-        "species_missing": "Species classifier file not found.",
-        "species_result": "Highest model score",
-        "history_h": "Discovery log",
-        "history_empty": "No analyses in this session yet. Your results will appear here after an analysis.",
-        "lab_h": "Research laboratory",
-        "lab_p": "Compare the three detector variants under controlled SNR conditions. These benchmark values come from the notebook's demonstration-subset run and are not a field-performance guarantee.",
-        "fixed": "Fixed-mix reference",
-        "random": "Random-SNR control",
-        "curriculum": "SNR curriculum",
-        "snr_note": "Controlled SNR results are not directly comparable with the paper's full independent test benchmarks.",
-        "field_h": "Field guide",
-        "field_p": "A short guide to interpreting passive acoustic monitoring outputs.",
-        "what_detection": "What is detection?",
-        "what_detection_p": "The detector examines short acoustic windows and estimates whether each window resembles the positive dolphin-vocalisation class learned during training.",
+        "windows": "Windows scanned",
+        "detectors_run": "Detectors run",
+        "event_counts": "Candidate events by detector",
+        "events": "candidate events",
+        "no_events": "No windows crossed the selected threshold. This does not establish that dolphin vocalisations are absent.",
+        "some_events": "Candidate dolphin-vocalisation windows were detected. Review the clips before drawing conclusions.",
+        "timeline": "Window-level detection timeline",
+        "details": "Window-level scores and exports",
+        "start": "Start (s)",
+        "end": "End (s)",
+        "peak": "Peak model score",
+        "download_csv": "Download window results (CSV)",
+        "download_json": "Download analysis report (JSON)",
+        "inspect_event": "Choose a candidate event to listen to",
+        "download_clip": "Download candidate event WAV",
+        "species_title": "EXPERIMENTAL SPECIES CLASSIFICATION",
+        "species_body": "This optional second stage scores a selected candidate event against three trained labels: Delphinus delphis, Sousa plumbea, and Tursiops aduncus.",
+        "species_warning": "EXPERIMENTAL / LOW VALIDATION: the current reimplementation reported 33.3% validation accuracy on its demonstration subset. This output is not reliable species identification and must not be used as a biological conclusion.",
+        "species_event": "Candidate event to classify",
+        "species_run": "RUN EXPERIMENTAL SPECIES MODEL",
+        "species_no_events": "Run detection first and select a candidate event. Species scoring is only offered on detected event clips.",
+        "species_result": "Highest model score (not calibrated)",
+        "species_scores": "Scores for the three trained labels",
+        "species_missing": "The experimental species model file is missing.",
+        "status": "MODEL FILE STATUS",
+        "detector_status": "Detectors",
+        "species_status": "Experimental species model",
+        "available": "READY",
+        "missing": "MISSING",
+        "history_title": "Detection log",
+        "history_empty": "No scans in this session yet.",
+        "clear_history": "Clear session log",
+        "research_title": "Research bench: controlled SNR experiment",
+        "research_body": "Compare the three detector variants on the demonstration-subset experiment. These values are preliminary and are not a guarantee of performance on uploaded field recordings.",
+        "metric": "Benchmark metric",
+        "snr_note": "The SNR results are from a demonstration subset and are not directly comparable with the paper's full independent test benchmarks. Repeated identical values across multiple SNR levels should be audited before strong claims are made.",
+        "guide_title": "Field notes",
+        "what_detector": "What does the main detector do?",
+        "what_detector_p": "It performs binary detection: dolphin-vocalisation-like audio versus the negative/background class represented during training. It does not identify arbitrary ocean sounds, and it does not tell you which species produced every positive window.",
+        "what_species": "What does the optional species stage do?",
+        "what_species_p": "It is a separate, experimental model with three output labels: Delphinus delphis (common dolphin), Sousa plumbea (Indian Ocean humpback dolphin), and Tursiops aduncus (Indo-Pacific bottlenose dolphin). The current model's reported 33.3% validation accuracy on the demonstration subset is too limited for dependable taxonomic identification.",
         "what_snr": "What is SNR?",
-        "what_snr_p": "Signal-to-noise ratio compares signal power with background-noise power. Lower SNR means the signal is more heavily masked by noise.",
-        "what_spectrogram": "What is a spectrogram?",
-        "what_spectrogram_p": "A spectrogram shows how acoustic energy is distributed across frequency over time. It can help reveal whistles, clicks, and other structured sounds.",
-        "limitations": "Limitations",
-        "limitations_p": "This release uses a demonstration subset. Recording conditions, hydrophone response, species distribution, and real ocean noise can differ substantially from training data. Treat all predictions as screening cues that require expert review.",
-        "footer": "SONARA · Research prototype · Not a validated biodiversity-monitoring instrument",
-        "about": "ABOUT THIS CONSOLE",
-        "about_p": "An acoustic research prototype using three SNR-training strategies for candidate dolphin-vocalisation detection.",
-        "model_file": "Model artifact",
-        "available": "Available",
-        "missing": "Missing",
-        "listen": "Listen to recording",
-        "select_model": "Models to run",
-        "all_models": "Run all available detectors",
-        "analysis_complete": "Analysis complete",
-        "invalid_audio": "The uploaded file could not be decoded as audio.",
-        "short_audio": "Recording must be at least 2 seconds long.",
+        "what_snr_p": "Signal-to-noise ratio compares signal power with background-noise power. Lower SNR means a signal is more heavily masked by noise. The SNR curriculum is a training strategy for the detector, not a separate sound category.",
+        "limitations": "Scientific limitations",
+        "limitations_p": "The app uses regular sliding windows at inference, while the training notebook used annotation-associated windows. Uploads have no ground-truth labels or measured SNR by default. Real ocean recordings may differ in hydrophone response, propagation, ambient noise, species distribution, and recording conditions. Treat detections as screening cues requiring expert review.",
+        "footer": "SONARA · CetusID-derived dolphin-vocalisation research prototype · Not a validated ecological monitoring instrument",
+        "about": "ABOUT SONARA",
+        "about_body": "Focused dolphin-vocalisation detection, with a separate experimental three-class species stage.",
+        "sample_rate": "Target sample rate",
+        "window": "Window length",
+        "hop": "Hop length",
         "source": "Source recording",
-        "peak": "Peak amplitude",
-        "no_model": "No detector models are available.",
+        "original_rate": "Original sample rate",
+        "all_models": "Select all available detectors",
+        "model_name": "Detector",
+        "score": "Score",
+        "created": "Scanned at",
+        "clear_notice": "New recording selected. Previous results have been cleared.",
     },
     "Bahasa Indonesia": {
-        "nav": "NAVIGASI",
-        "home": "Ringkasan misi",
-        "explore": "Analisis akustik",
-        "discoveries": "Log temuan",
-        "lab": "Laboratorium riset",
-        "guide": "Panduan lapangan",
         "language": "BAHASA / LANGUAGE",
-        "title": "SONARA",
-        "subtitle": "PENJELAJAH SUARA LAUT",
-        "mission": "Eksplorasi akustik pasif",
-        "home_h": "Dengarkan suara di bawah permukaan.",
-        "home_p": "Jelajahi rekaman bawah laut dengan detektor akustik berbantuan AI. Unggah berkas WAV, periksa kandidat vokalisasi, dan tinjau respons model.",
-        "start": "MULAI ANALISIS AKUSTIK",
-        "how": "CARA KERJA",
-        "status": "STATUS SISTEM",
-        "ready": "Konsol siap",
-        "models": "Model detektor",
-        "models_missing": "Berkas model tidak ditemukan",
-        "sample_rate": "Frekuensi sampling target",
-        "window": "Jendela analisis",
-        "hop": "Langkah jendela",
-        "notice_title": "Catatan ilmiah",
-        "notice": "Deteksi adalah kandidat yang dihasilkan model, bukan konfirmasi keberadaan lumba-lumba atau spesies tertentu. Kinerja pada rekaman lapangan yang diunggah belum ditetapkan.",
-        "explore_h": "Analisis akustik",
-        "explore_p": "Unggah rekaman bawah laut berformat WAV. Aplikasi akan melakukan resampling ke frekuensi sampling pelatihan dan memindai jendela dua detik yang saling bertumpang tindih.",
-        "upload": "Pilih rekaman WAV",
-        "upload_help": "Hanya audio WAV. Rekaman yang lebih panjang membutuhkan waktu analisis lebih lama.",
+        "mission": "PEMANTAUAN AKUSTIK PASIF LUMBA-LUMBA",
+        "subtitle": "KONSOL ANALISIS VOKALISASI LUMBA-LUMBA",
+        "header_note": "KELAS TARGET: VOKALISASI LUMBA-LUMBA",
+        "hero_kicker": "KONSOL LAPANGAN / MISI 01",
+        "hero_title": "Temukan suara lumba-lumba di tengah derau.",
+        "hero_body": "SONARA memindai rekaman WAV bawah air untuk mencari kandidat vokalisasi lumba-lumba. Ini adalah alat akustik khusus lumba-lumba — bukan pengklasifikasi semua suara laut.",
+        "hero_chip": "TUGAS UTAMA: DETEKSI VOKALISASI / LATAR",
+        "notice_title": "BACA SEBELUM MENAFSIRKAN HASIL DETEKSI",
+        "notice": "Hasil positif adalah kandidat jendela vokalisasi lumba-lumba, bukan bukti pasti adanya perjumpaan dengan lumba-lumba. Dengarkan audio dan perlakukan skor model sebagai hasil penyaringan.",
+        "how": "ALUR KERJA TIGA LANGKAH",
+        "step1": "UNGGAH",
+        "step1p": "Masukkan rekaman WAV bawah air.",
+        "step2": "DETEKSI",
+        "step2p": "Tiga varian detektor memindai jendela dua detik yang saling bertumpang tindih untuk mencari pola vokalisasi lumba-lumba.",
+        "step3": "TINJAU",
+        "step3p": "Dengarkan kandidat kejadian, periksa waktunya, dan ekspor hasil.",
+        "analysis_title": "Deteksi vokalisasi lumba-lumba",
+        "analysis_body": "Detektor menjawab pertanyaan khusus: apakah jendela akustik dua detik ini menyerupai kelas vokalisasi lumba-lumba yang dipelajari saat pelatihan, dibandingkan kelas negatif/latar?",
+        "upload": "Rekaman WAV bawah air",
+        "upload_help": "Hanya WAV. Rekaman yang sangat panjang membutuhkan waktu pemindaian lebih lama pada hosting gratis.",
         "threshold": "Ambang deteksi",
-        "run": "JALANKAN ANALISIS",
-        "need_models": "Artefak model belum tersedia. Tambahkan tiga berkas detektor ke direktori `models/`. Lihat README.md.",
+        "models": "Varian detektor",
+        "run": "JALANKAN DETEKSI LUMBA-LUMBA",
         "need_audio": "Unggah rekaman WAV untuk memulai.",
-        "analyzing": "Menyiapkan jendela akustik…",
-        "results": "LAPORAN ANALISIS",
-        "duration": "Durasi rekaman",
-        "windows": "Jendela dianalisis",
-        "candidate_events": "Kandidat kejadian",
-        "no_events": "Tidak ada kandidat kejadian yang melewati ambang terpilih. Ini tidak membuktikan bahwa vokalisasi lumba-lumba tidak ada.",
-        "events_found": "Kandidat kejadian akustik terdeteksi",
-        "model": "Model",
-        "time_start": "Mulai (dtk)",
-        "time_end": "Selesai (dtk)",
-        "confidence": "Probabilitas puncak",
-        "event_count": "Kejadian",
-        "timeline": "Linimasa deteksi",
-        "details": "Hasil per jendela",
-        "download_csv": "Unduh CSV",
-        "download_json": "Unduh JSON",
-        "species_h": "Tahap klasifikasi spesies eksperimental",
-        "species_warning": "Hanya eksperimental — validasi pada subset demonstrasi terbatas (akurasi 33,3% dilaporkan pada eksperimen ini). Jangan gunakan keluaran ini sebagai identifikasi biologis.",
-        "species_run": "JALANKAN KLASIFIKATOR SPESIES EKSPERIMENTAL",
-        "species_missing": "Berkas klasifikator spesies tidak ditemukan.",
-        "species_result": "Skor model tertinggi",
-        "history_h": "Log temuan",
-        "history_empty": "Belum ada analisis pada sesi ini. Hasil akan muncul di sini setelah analisis dilakukan.",
-        "lab_h": "Laboratorium riset",
-        "lab_p": "Bandingkan tiga varian detektor pada kondisi SNR terkontrol. Nilai benchmark ini berasal dari eksperimen subset demonstrasi di notebook dan bukan jaminan kinerja lapangan.",
-        "fixed": "Referensi fixed-mix",
-        "random": "Kontrol random-SNR",
-        "curriculum": "Kurikulum SNR",
-        "snr_note": "Hasil SNR terkontrol tidak dapat dibandingkan langsung dengan benchmark uji independen penuh pada paper.",
-        "field_h": "Panduan lapangan",
-        "field_p": "Panduan singkat untuk memahami keluaran pemantauan akustik pasif.",
-        "what_detection": "Apa itu deteksi?",
-        "what_detection_p": "Detektor memeriksa jendela akustik pendek dan memperkirakan apakah setiap jendela menyerupai kelas positif vokalisasi lumba-lumba yang dipelajari selama pelatihan.",
-        "what_snr": "Apa itu SNR?",
-        "what_snr_p": "Signal-to-noise ratio membandingkan daya sinyal dengan daya derau latar. SNR yang lebih rendah berarti sinyal semakin tertutup oleh derau.",
-        "what_spectrogram": "Apa itu spektrogram?",
-        "what_spectrogram_p": "Spektrogram menunjukkan distribusi energi akustik pada frekuensi terhadap waktu. Visualisasi ini dapat membantu memperlihatkan siulan, klik, dan suara terstruktur lainnya.",
-        "limitations": "Keterbatasan",
-        "limitations_p": "Rilis ini menggunakan subset demonstrasi. Kondisi perekaman, respons hidrofon, distribusi spesies, dan derau laut nyata dapat berbeda dari data pelatihan. Perlakukan semua prediksi sebagai petunjuk penyaringan yang memerlukan tinjauan ahli.",
-        "footer": "SONARA · Prototipe riset · Bukan instrumen pemantauan biodiversitas tervalidasi",
-        "about": "TENTANG KONSOL INI",
-        "about_p": "Prototipe riset akustik yang menggunakan tiga strategi pelatihan SNR untuk mendeteksi kandidat vokalisasi lumba-lumba.",
-        "model_file": "Artefak model",
-        "available": "Tersedia",
-        "missing": "Tidak tersedia",
-        "listen": "Dengarkan rekaman",
-        "select_model": "Model yang dijalankan",
-        "all_models": "Jalankan semua detektor yang tersedia",
-        "analysis_complete": "Analisis selesai",
-        "invalid_audio": "Berkas yang diunggah tidak dapat dibaca sebagai audio.",
         "short_audio": "Durasi rekaman minimal 2 detik.",
+        "invalid_audio": "Berkas tidak dapat dibaca sebagai audio. Pastikan berkas merupakan WAV yang valid.",
+        "analyzing": "Membuat jendela spektrogram dan menjalankan detektor yang dipilih…",
+        "analysis_complete": "Pemindaian deteksi selesai.",
+        "no_detectors": "Berkas model detektor belum tersedia. Tambahkan tiga berkas .keras detektor ke folder models/ pada repositori.",
+        "results": "LAPORAN DETEKSI",
+        "duration": "Durasi rekaman",
+        "windows": "Jendela dipindai",
+        "detectors_run": "Detektor dijalankan",
+        "event_counts": "Kandidat kejadian per detektor",
+        "events": "kandidat kejadian",
+        "no_events": "Tidak ada jendela yang melewati ambang terpilih. Ini tidak membuktikan bahwa vokalisasi lumba-lumba tidak ada.",
+        "some_events": "Kandidat jendela vokalisasi lumba-lumba terdeteksi. Tinjau klip sebelum menarik kesimpulan.",
+        "timeline": "Linimasa deteksi per jendela",
+        "details": "Skor per jendela dan ekspor",
+        "start": "Mulai (dtk)",
+        "end": "Selesai (dtk)",
+        "peak": "Skor model puncak",
+        "download_csv": "Unduh hasil jendela (CSV)",
+        "download_json": "Unduh laporan analisis (JSON)",
+        "inspect_event": "Pilih kandidat kejadian untuk didengarkan",
+        "download_clip": "Unduh WAV kandidat kejadian",
+        "species_title": "KLASIFIKASI SPESIES EKSPERIMENTAL",
+        "species_body": "Tahap kedua opsional ini memberi skor pada kandidat kejadian terpilih terhadap tiga label pelatihan: Delphinus delphis, Sousa plumbea, dan Tursiops aduncus.",
+        "species_warning": "EKSPERIMENTAL / VALIDASI RENDAH: implementasi saat ini melaporkan akurasi validasi 33,3% pada subset demonstrasi. Keluaran ini bukan identifikasi spesies yang andal dan tidak boleh digunakan sebagai kesimpulan biologis.",
+        "species_event": "Kandidat kejadian untuk diklasifikasikan",
+        "species_run": "JALANKAN MODEL SPESIES EKSPERIMENTAL",
+        "species_no_events": "Jalankan deteksi terlebih dahulu dan pilih kandidat kejadian. Skor spesies hanya tersedia untuk klip kejadian yang terdeteksi.",
+        "species_result": "Skor model tertinggi (tidak terkalibrasi)",
+        "species_scores": "Skor untuk tiga label pelatihan",
+        "species_missing": "Berkas model spesies eksperimental tidak ditemukan.",
+        "status": "STATUS BERKAS MODEL",
+        "detector_status": "Detektor",
+        "species_status": "Model spesies eksperimental",
+        "available": "SIAP",
+        "missing": "HILANG",
+        "history_title": "Log deteksi",
+        "history_empty": "Belum ada pemindaian pada sesi ini.",
+        "clear_history": "Hapus log sesi",
+        "research_title": "Meja riset: eksperimen SNR terkontrol",
+        "research_body": "Bandingkan tiga varian detektor pada eksperimen subset demonstrasi. Nilai bersifat awal dan bukan jaminan kinerja pada rekaman lapangan yang diunggah.",
+        "metric": "Metrik benchmark",
+        "snr_note": "Hasil SNR berasal dari subset demonstrasi dan tidak dapat dibandingkan langsung dengan benchmark uji independen penuh pada paper. Nilai identik berulang pada beberapa tingkat SNR perlu diaudit sebelum membuat klaim kuat.",
+        "guide_title": "Catatan lapangan",
+        "what_detector": "Apa fungsi detektor utama?",
+        "what_detector_p": "Detektor melakukan deteksi biner: audio yang menyerupai vokalisasi lumba-lumba dibandingkan kelas negatif/latar yang direpresentasikan selama pelatihan. Model ini tidak mengidentifikasi semua jenis suara laut dan tidak menentukan spesies dari setiap jendela positif.",
+        "what_species": "Apa fungsi tahap spesies opsional?",
+        "what_species_p": "Ini adalah model terpisah yang masih eksperimental dengan tiga label keluaran: Delphinus delphis (lumba-lumba biasa), Sousa plumbea (lumba-lumba bungkuk Samudra Hindia), dan Tursiops aduncus (lumba-lumba hidung botol Indo-Pasifik). Akurasi validasi model saat ini sebesar 33,3% pada subset demonstrasi terlalu terbatas untuk identifikasi taksonomi yang dapat diandalkan.",
+        "what_snr": "Apa itu SNR?",
+        "what_snr_p": "Signal-to-noise ratio membandingkan daya sinyal dengan daya derau latar. SNR yang lebih rendah berarti sinyal semakin tertutup derau. Kurikulum SNR merupakan strategi pelatihan detektor, bukan kategori suara tersendiri.",
+        "limitations": "Keterbatasan ilmiah",
+        "limitations_p": "Aplikasi menggunakan sliding window reguler saat inferensi, sedangkan notebook pelatihan menggunakan jendela yang terkait anotasi. Rekaman unggahan tidak otomatis memiliki label ground truth atau SNR terukur. Rekaman laut nyata dapat berbeda dalam respons hidrofon, propagasi, derau lingkungan, distribusi spesies, dan kondisi perekaman. Perlakukan deteksi sebagai petunjuk penyaringan yang memerlukan tinjauan ahli.",
+        "footer": "SONARA · Prototipe riset vokalisasi lumba-lumba turunan CetusID · Bukan instrumen pemantauan ekologi tervalidasi",
+        "about": "TENTANG SONARA",
+        "about_body": "Deteksi khusus vokalisasi lumba-lumba, dengan tahap spesies tiga kelas yang terpisah dan masih eksperimental.",
+        "sample_rate": "Frekuensi sampling target",
+        "window": "Panjang jendela",
+        "hop": "Langkah jendela",
         "source": "Rekaman sumber",
-        "peak": "Amplitudo puncak",
-        "no_model": "Tidak ada model detektor yang tersedia.",
+        "original_rate": "Frekuensi sampling awal",
+        "all_models": "Pilih semua detektor yang tersedia",
+        "model_name": "Detektor",
+        "score": "Skor",
+        "created": "Waktu pemindaian",
+        "clear_notice": "Rekaman baru dipilih. Hasil sebelumnya telah dihapus.",
     },
+}
+
+MODEL_NAMES = {
+    "fixed": {"English": "Fixed-mix reference", "Bahasa Indonesia": "Referensi fixed-mix"},
+    "random": {"English": "Random-SNR control", "Bahasa Indonesia": "Kontrol random-SNR"},
+    "curriculum": {"English": "SNR curriculum", "Bahasa Indonesia": "Kurikulum SNR"},
 }
 
 
 def tr(key: str) -> str:
-    return COPY[st.session_state.get("language", "English")][key]
+    lang = st.session_state.get("language", "English")
+    return COPY[lang][key]
 
 
-def model_status() -> dict[str, bool]:
-    return {name: (MODEL_DIR / filename).exists() for name, filename in DETECTOR_FILES.items()}
+def detector_status() -> dict[str, bool]:
+    return {key: (MODEL_DIR / filename).is_file() for key, filename in DETECTOR_FILES.items()}
 
 
-def render_header():
-    st.markdown(
-        """
-        <div class="topline">
-          <span class="topline-dot"></span>
-          PASSIVE ACOUSTIC MONITORING <span class="topline-sep">/</span>
-          SONARA RESEARCH CONSOLE
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    a, b = st.columns([3, 1])
-    with a:
-        st.markdown(f"<div class='brand'>{tr('title')}<span class='brand-mark'> ◈</span></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='brand-sub'>{tr('subtitle')}</div>", unsafe_allow_html=True)
-    with b:
-        st.markdown("<div class='depth-readout'>", unsafe_allow_html=True)
-        st.caption("ACOUSTIC ARRAY  ·  96 kHz")
-        st.markdown("<span class='depth-value'>—  —  —</span>", unsafe_allow_html=True)
-        st.caption("SYSTEM / STANDBY")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-def render_model_status(status: dict[str, bool]):
+def render_status(status: dict[str, bool], species_exists: bool) -> None:
     ready = sum(status.values())
     st.markdown(f"**{tr('status')}**")
-    st.progress(ready / len(status), text=f"{ready}/{len(status)} {tr('models').lower()}")
-    for key, ok in status.items():
-        label = {
-            "fixed": tr("fixed"),
-            "random": tr("random"),
-            "curriculum": tr("curriculum"),
-        }[key]
+    st.progress(ready / max(len(status), 1), text=f"{ready}/{len(status)} {tr('detector_status').lower()}")
+    for key, exists in status.items():
+        label = MODEL_NAMES[key][st.session_state.language]
         st.markdown(
-            f"<div class='status-row'><span>{label}</span><span class='status-pill {'ok' if ok else 'off'}'>{tr('available') if ok else tr('missing')}</span></div>",
+            f"<div class='status-row'><span>{label}</span><span class='status-pill {'ok' if exists else 'off'}'>{tr('available') if exists else tr('missing')}</span></div>",
             unsafe_allow_html=True,
         )
+    st.markdown(
+        f"<div class='status-row'><span>{tr('species_status')}</span><span class='status-pill {'ok' if species_exists else 'off'}'>{tr('available') if species_exists else tr('missing')}</span></div>",
+        unsafe_allow_html=True,
+    )
 
 
-def load_audio(uploaded):
+def load_audio(file_bytes: bytes) -> tuple[np.ndarray, int]:
+    """Decode WAV, convert to mono, and resample to the model's 96 kHz input rate."""
     try:
-        raw, sr = sf.read(io.BytesIO(uploaded.getvalue()), dtype="float32", always_2d=True)
-        audio = np.mean(raw, axis=1).astype(np.float32)
-        if sr != TARGET_SR:
-            audio = librosa.resample(audio, orig_sr=sr, target_sr=TARGET_SR)
-        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
-        return audio, sr
+        raw, original_sr = sf.read(io.BytesIO(file_bytes), dtype="float32", always_2d=True)
+        if raw.size == 0 or original_sr <= 0:
+            raise ValueError("Empty or invalid WAV audio")
+        mono = np.mean(raw, axis=1).astype(np.float32)
+        if original_sr != TARGET_SR:
+            mono = librosa.resample(mono, orig_sr=original_sr, target_sr=TARGET_SR)
+        mono = np.nan_to_num(mono, nan=0.0, posinf=0.0, neginf=0.0)
+        return mono, int(original_sr)
     except Exception as exc:
         raise ValueError(str(exc)) from exc
 
 
-def plot_timeline(df: pd.DataFrame):
+@st.cache_resource(show_spinner=False)
+def cached_model_bundle(model_dir: str, requested: tuple[str, ...]):
+    """Load selected Keras models once per Streamlit worker instead of on every rerun."""
+    return load_model_bundle(Path(model_dir), list(requested))
+
+
+def plot_timeline(window_df: pd.DataFrame):
+    colors = {"fixed": "#6be3cf", "random": "#f4d477", "curriculum": "#83cfff"}
     fig = go.Figure()
-    colors = {
-        "Fixed-mix reference": "#67c6c1",
-        "Random-SNR control": "#e6c77a",
-        "SNR curriculum": "#ff9b78",
-    }
-    for model_name, group in df.groupby("model"):
-        y = [model_name] * len(group)
+    for model_key, group in window_df.groupby("model_key", sort=False):
         fig.add_trace(go.Scatter(
-            x=group["start_s"], y=y, mode="markers",
-            marker=dict(size=10, color=colors.get(model_name, "#9eb4c5"),
-                        opacity=0.85,
-                        line=dict(width=1, color="#e9f1f5")),
-            customdata=np.stack([group["end_s"], group["probability"]], axis=-1),
-            hovertemplate="Start: %{x:.2f}s<br>End: %{customdata[0]:.2f}s<br>Probability: %{customdata[1]:.3f}<extra></extra>",
-            name=model_name,
+            x=group["start_s"],
+            y=[MODEL_NAMES[model_key][st.session_state.language]] * len(group),
+            mode="markers",
+            marker={"size": 9, "color": colors.get(model_key, "#edf8f2"), "opacity": .88,
+                     "line": {"width": 1, "color": "#07131f"}},
+            customdata=np.stack([group["end_s"], group["score"]], axis=-1),
+            hovertemplate="Start: %{x:.2f}s<br>End: %{customdata[0]:.2f}s<br>Score: %{customdata[1]:.3f}<extra></extra>",
+            name=MODEL_NAMES[model_key][st.session_state.language],
         ))
     fig.update_layout(
-        height=250, margin=dict(l=8, r=8, t=12, b=8),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#dbe7ed"), xaxis_title="Time (seconds)",
-        yaxis_title="", showlegend=False,
-        xaxis=dict(gridcolor="rgba(160,190,205,.12)"),
-        yaxis=dict(gridcolor="rgba(160,190,205,.08)"),
+        height=max(210, 78 * max(1, window_df["model_key"].nunique())),
+        margin={"l": 8, "r": 8, "t": 12, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(7,19,31,.4)",
+        font={"color": "#edf8f2", "family": "monospace", "size": 12},
+        xaxis_title="Time (seconds)",
+        yaxis_title="",
+        showlegend=False,
+        xaxis={"gridcolor": "rgba(160,190,205,.16)", "zerolinecolor": "rgba(160,190,205,.2)"},
+        yaxis={"gridcolor": "rgba(160,190,205,.1)", "autorange": "reversed"},
     )
     return fig
 
 
-def show_results(result: dict, audio: np.ndarray, threshold: float):
+def flatten_window_results(result: dict) -> pd.DataFrame:
+    rows = []
+    for model_key, windows in result["windows"].items():
+        for row in windows:
+            rows.append({
+                "model_key": model_key,
+                "detector": MODEL_NAMES[model_key][st.session_state.language],
+                "start_s": row["start_s"],
+                "end_s": row["end_s"],
+                "score": row["probability"],
+                "candidate": row["detected"],
+            })
+    return pd.DataFrame(rows)
+
+
+def show_results(result: dict, audio: np.ndarray, threshold: float) -> None:
     st.markdown(f"### {tr('results')}")
+    st.caption(f"{tr('threshold')}: {threshold:.2f}")
     m1, m2, m3 = st.columns(3)
     m1.metric(tr("duration"), f"{result['duration_s']:.1f} s")
     m2.metric(tr("windows"), f"{result['window_count']:,}")
-    total = sum(len(v) for v in result["events"].values())
-    m3.metric(tr("candidate_events"), total)
-    if total:
-        st.success(tr("events_found"))
+    m3.metric(tr("detectors_run"), len(result["events"]))
+
+    rows_by_detector = []
+    for key, events in result["events"].items():
+        rows_by_detector.append({
+            tr("model_name"): MODEL_NAMES[key][st.session_state.language],
+            tr("events"): len(events),
+        })
+    st.markdown(f"#### {tr('event_counts')}")
+    st.dataframe(pd.DataFrame(rows_by_detector), use_container_width=True, hide_index=True)
+
+    total_events = sum(len(events) for events in result["events"].values())
+    if total_events:
+        st.success(tr("some_events"))
     else:
         st.info(tr("no_events"))
 
-    all_rows = []
-    display_names = {
-        "fixed": tr("fixed"),
-        "random": tr("random"),
-        "curriculum": tr("curriculum"),
-    }
-    for key, rows in result["windows"].items():
-        for row in rows:
-            all_rows.append({
-                "model": display_names[key],
-                "start_s": row["start_s"],
-                "end_s": row["end_s"],
-                "probability": row["probability"],
-                "detected": row["detected"],
-            })
-    window_df = pd.DataFrame(all_rows)
+    window_df = flatten_window_results(result)
     if not window_df.empty:
         st.markdown(f"#### {tr('timeline')}")
-        st.plotly_chart(plot_timeline(window_df), use_container_width=True)
+        st.plotly_chart(plot_timeline(window_df), use_container_width=True, config={"displayModeBar": False})
 
-    tabs = st.tabs([display_names[k] for k in result["events"]])
-    for tab, key in zip(tabs, result["events"]):
+    model_keys = list(result["events"].keys())
+    tabs = st.tabs([MODEL_NAMES[key][st.session_state.language] for key in model_keys])
+    for tab, key in zip(tabs, model_keys):
         with tab:
             events = result["events"][key]
             if not events:
                 st.caption(tr("no_events"))
-            else:
-                event_df = pd.DataFrame(events).rename(columns={
-                    "start_s": tr("time_start"),
-                    "end_s": tr("time_end"),
-                    "peak_probability": tr("confidence"),
-                })
-                st.dataframe(event_df, use_container_width=True, hide_index=True)
-                chosen = st.selectbox(
-                    "Inspect event / Periksa kejadian",
-                    options=list(range(len(events))),
-                    format_func=lambda i: f"Event {i+1} · {events[i]['start_s']:.2f}–{events[i]['end_s']:.2f} s",
-                    key=f"event_{key}",
+                continue
+            event_df = pd.DataFrame(events).rename(columns={
+                "start_s": tr("start"),
+                "end_s": tr("end"),
+                "peak_probability": tr("peak"),
+                "window_count": "Windows",
+            })
+            st.dataframe(event_df, use_container_width=True, hide_index=True)
+            selected_event = st.selectbox(
+                tr("inspect_event"),
+                options=list(range(len(events))),
+                format_func=lambda idx, ev=events: (
+                    f"EVENT {idx + 1:02d}  |  {ev[idx]['start_s']:.2f}–{ev[idx]['end_s']:.2f} s"
+                ),
+                key=f"inspect_{key}",
+            )
+            event = events[selected_event]
+            clip_start = max(0, int(event["start_s"] * TARGET_SR))
+            clip_end = min(len(audio), int(event["end_s"] * TARGET_SR))
+            if clip_end > clip_start:
+                clip = audio[clip_start:clip_end]
+                st.audio(clip, sample_rate=TARGET_SR)
+                wav_buffer = io.BytesIO()
+                sf.write(wav_buffer, clip, TARGET_SR, format="WAV")
+                st.download_button(
+                    tr("download_clip"),
+                    data=wav_buffer.getvalue(),
+                    file_name=f"sonara_{key}_candidate_{selected_event + 1}.wav",
+                    mime="audio/wav",
+                    key=f"download_{key}_{selected_event}",
                 )
-                ev = events[chosen]
-                start = max(0, int(ev["start_s"] * TARGET_SR))
-                end = min(len(audio), int(ev["end_s"] * TARGET_SR))
-                if end > start:
-                    clip = audio[start:end]
-                    st.audio(clip, sample_rate=TARGET_SR)
-                    wav_buf = io.BytesIO()
-                    sf.write(wav_buf, clip, TARGET_SR, format="WAV")
-                    st.download_button(
-                        "Download event WAV / Unduh WAV kejadian",
-                        data=wav_buf.getvalue(),
-                        file_name=f"sonara_{key}_event_{chosen+1}.wav",
-                        mime="audio/wav",
-                        key=f"clip_{key}_{chosen}",
-                    )
 
     with st.expander(tr("details")):
-        st.dataframe(window_df, use_container_width=True, hide_index=True)
-        st.download_button(
-            tr("download_csv"),
-            data=window_df.to_csv(index=False).encode("utf-8"),
-            file_name="sonara_window_predictions.csv",
-            mime="text/csv",
+        st.dataframe(
+            window_df.drop(columns=["model_key"]).rename(columns={
+                "detector": tr("model_name"),
+                "start_s": tr("start"),
+                "end_s": tr("end"),
+                "score": tr("score"),
+                "candidate": "Candidate",
+            }),
+            use_container_width=True,
+            hide_index=True,
         )
+        csv_data = window_df.drop(columns=["model_key"]).to_csv(index=False).encode("utf-8")
+        st.download_button(tr("download_csv"), csv_data, "sonara_detection_windows.csv", "text/csv")
         payload = {
             "project": "SONARA",
-            "model_lineage": "Trained detector artifacts exported from the Sonara research experiment; see README for paper and dataset attribution.",
+            "task": "candidate_dolphin_vocalisation_detection",
+            "model_lineage": "CetusID research lineage; see README for paper and dataset attribution.",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "threshold": threshold,
             "duration_s": result["duration_s"],
             "window_count": result["window_count"],
             "events": result["events"],
             "windows": result["windows"],
-            "scientific_note": "Model predictions are candidate detections, not confirmation of dolphin presence.",
+            "scientific_note": "A positive prediction is a candidate dolphin-vocalisation detection, not confirmation of dolphin presence or species.",
         }
         st.download_button(
             tr("download_json"),
-            data=json.dumps(payload, indent=2).encode("utf-8"),
-            file_name="sonara_analysis.json",
-            mime="application/json",
+            json.dumps(payload, indent=2).encode("utf-8"),
+            "sonara_detection_report.json",
+            "application/json",
         )
 
 
-def main():
+def render_pixel_dolphin() -> None:
+    # Small, self-contained pixel-art dolphin/sonar illustration; no external image dependency.
+    st.markdown(
+        """
+        <div class="hero-visual" aria-label="Pixel-art dolphin in a sonar display">
+          <svg viewBox="0 0 320 210" role="img" aria-hidden="true">
+            <rect x="1" y="1" width="318" height="208" fill="#071a28" stroke="#2d6070" stroke-width="2"/>
+            <g stroke="#1c5060" stroke-width="1" fill="none" shape-rendering="crispEdges">
+              <path d="M20 36H300 M20 72H300 M20 108H300 M20 144H300 M20 180H300" stroke-dasharray="4 7"/>
+              <path d="M56 16V194 M104 16V194 M152 16V194 M200 16V194 M248 16V194" stroke-dasharray="4 7"/>
+              <rect x="76" y="27" width="168" height="150"/>
+              <rect x="96" y="45" width="128" height="114"/>
+              <rect x="116" y="63" width="88" height="78"/>
+            </g>
+            <g fill="#6be3cf" shape-rendering="crispEdges">
+              <rect x="91" y="90" width="22" height="18"/>
+              <rect x="113" y="72" width="22" height="36"/>
+              <rect x="135" y="63" width="66" height="45"/>
+              <rect x="201" y="72" width="25" height="27"/>
+              <rect x="226" y="81" width="18" height="18"/>
+              <rect x="244" y="87" width="16" height="9"/>
+              <rect x="153" y="54" width="17" height="9"/>
+              <rect x="161" y="45" width="9" height="9"/>
+              <rect x="148" y="108" width="34" height="9" fill="#3faeaa"/>
+              <rect x="169" y="117" width="27" height="9" fill="#3faeaa"/>
+              <rect x="108" y="108" width="27" height="9"/>
+              <rect x="89" y="117" width="18" height="9"/>
+              <rect x="73" y="108" width="16" height="9"/>
+              <rect x="66" y="99" width="9" height="9"/>
+            </g>
+            <g fill="#071a28" shape-rendering="crispEdges">
+              <rect x="214" y="81" width="7" height="7"/>
+              <rect x="244" y="87" width="5" height="5"/>
+            </g>
+            <g fill="#f4d477" shape-rendering="crispEdges">
+              <rect x="231" y="81" width="7" height="7"/>
+              <rect x="48" y="47" width="5" height="5"/>
+              <rect x="269" y="148" width="5" height="5"/>
+              <rect x="42" y="158" width="5" height="5"/>
+            </g>
+            <g fill="#83cfff" font-family="monospace" font-size="9">
+              <text x="18" y="18">SONAR / 96 kHz</text>
+              <text x="222" y="198">DOLPHIN</text>
+            </g>
+          </svg>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_header() -> None:
+    left, right = st.columns([1.6, 1], vertical_alignment="center")
+    with left:
+        st.markdown(
+            f"<div class='topline'>PASSIVE ACOUSTIC MONITORING / SONARA RESEARCH CONSOLE</div>"
+            f"<div class='brand'>SONARA<span class='brand-mark'> ◈</span></div>"
+            f"<div class='brand-sub'>{tr('subtitle')}</div>",
+            unsafe_allow_html=True,
+        )
+    with right:
+        st.markdown(
+            f"<div class='header-readout'><div class='small'>{tr('header_note')}</div>"
+            f"<div class='big'>96,000 Hz</div><div class='small'>2.0 s WINDOW / 1.0 s HOP</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _go_to_analysis() -> None:
+    # Streamlit callbacks run before widgets are re-created on the next rerun.
+    st.session_state.page = "analysis"
+
+
+def render_overview() -> None:
+    left, right = st.columns([1.35, .85], gap="large", vertical_alignment="center")
+    with left:
+        st.markdown(
+            f"<div class='pixel-kicker'>{tr('hero_kicker')}</div>"
+            f"<h1>{tr('hero_title')}</h1>"
+            f"<p>{tr('hero_body')}</p>"
+            f"<div class='pixel-chip'>{tr('hero_chip')}</div>",
+            unsafe_allow_html=True,
+        )
+        st.button(
+            "▶  " + PAGE_LABELS[st.session_state.language]["analysis"],
+            type="primary",
+            use_container_width=True,
+            on_click=_go_to_analysis,
+        )
+    with right:
+        render_pixel_dolphin()
+
+    st.markdown(f"<div class='section-kicker'>{tr('notice_title')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='info-strip'>{tr('notice')}</div>", unsafe_allow_html=True)
+
+    a, b, c = st.columns(3)
+    a.metric(tr("sample_rate"), "96 kHz")
+    b.metric(tr("window"), "2.0 s")
+    c.metric(tr("hop"), "1.0 s")
+
+    st.markdown(f"<div class='section-kicker'>{tr('how')}</div>", unsafe_allow_html=True)
+    step_items = [("01", tr("step1"), tr("step1p")), ("02", tr("step2"), tr("step2p")), ("03", tr("step3"), tr("step3p"))]
+    step_html = "<div class='steps-grid'>" + "".join(
+        f"<div class='step-card'><div class='step-index'>{number}</div><b>{title}</b><p>{body}</p></div>"
+        for number, title, body in step_items
+    ) + "</div>"
+    st.markdown(step_html, unsafe_allow_html=True)
+
+
+def render_species_stage(result: dict | None, audio: np.ndarray | None, species_exists: bool) -> None:
+    st.divider()
+    st.markdown(f"<div class='section-kicker'>{tr('species_title')}</div>", unsafe_allow_html=True)
+    st.write(tr("species_body"))
+    st.markdown(f"<div class='info-strip warning-strip'>{tr('species_warning')}</div>", unsafe_allow_html=True)
+    if not species_exists:
+        st.warning(tr("species_missing"))
+        return
+    if result is None or audio is None:
+        st.info(tr("species_no_events"))
+        return
+
+    candidates = []
+    for model_key, events in result["events"].items():
+        for event_index, event in enumerate(events):
+            candidates.append((model_key, event_index, event))
+    if not candidates:
+        st.info(tr("species_no_events"))
+        return
+
+    choice = st.selectbox(
+        tr("species_event"),
+        options=list(range(len(candidates))),
+        format_func=lambda i: (
+            f"{MODEL_NAMES[candidates[i][0]][st.session_state.language]} · "
+            f"{candidates[i][2]['start_s']:.2f}–{candidates[i][2]['end_s']:.2f} s"
+        ),
+        key="species_candidate_choice",
+    )
+    model_key, event_index, event = candidates[choice]
+    if st.button(tr("species_run"), key="run_species_model"):
+        start = max(0, int(event["start_s"] * TARGET_SR))
+        end = min(len(audio), int(event["end_s"] * TARGET_SR))
+        event_audio = audio[start:end]
+        if len(event_audio) < int(WINDOW_SECONDS * TARGET_SR):
+            st.error("Selected candidate is shorter than the model's 2-second input window.")
+            return
+        try:
+            with st.spinner("Scoring selected candidate event…"):
+                species_model = cached_model_bundle(str(MODEL_DIR), ("species",))["species"]
+                prediction = make_species_prediction(
+                    event_audio,
+                    species_model,
+                    metadata_path=MODEL_DIR / "experiment_metadata.json",
+                )
+            st.metric(tr("species_result"), prediction["label"].replace("_", " "))
+            st.caption(f"{tr('score')}: {prediction['probability']:.3f} · Model output, not calibrated.")
+            score_rows = []
+            labels = ["Delphinus delphis", "Sousa plumbea", "Tursiops aduncus"]
+            for label, score in zip(labels, prediction["scores"]):
+                score_rows.append({"Species label": label, "Model score": float(score)})
+            st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
+        except Exception as exc:
+            st.error(f"Species inference failed: {exc}")
+
+
+def render_analysis(status: dict[str, bool], species_exists: bool) -> None:
+    st.markdown(f"## {tr('analysis_title')}")
+    st.write(tr("analysis_body"))
+    available = [key for key, exists in status.items() if exists]
+    uploaded = st.file_uploader(tr("upload"), type=["wav"], help=tr("upload_help"), key="dolphin_wav_upload")
+    threshold = st.slider(tr("threshold"), 0.05, 0.95, 0.50, 0.05, key="detection_threshold")
+    selected = st.multiselect(
+        tr("models"),
+        options=available,
+        default=available,
+        format_func=lambda key: MODEL_NAMES[key][st.session_state.language],
+        key="selected_detectors",
+        help=tr("all_models"),
+    )
+
+    current_result = None
+    current_audio = None
+    if uploaded is not None:
+        file_bytes = uploaded.getvalue()
+        upload_token = hashlib.sha256(file_bytes).hexdigest()
+        if st.session_state.get("active_upload_token") != upload_token:
+            st.session_state.pop("last_result", None)
+            st.session_state.pop("last_audio", None)
+            st.session_state.pop("species_prediction", None)
+            st.session_state.active_upload_token = upload_token
+        try:
+            audio, original_sr = load_audio(file_bytes)
+            if len(audio) / TARGET_SR < WINDOW_SECONDS:
+                st.error(tr("short_audio"))
+            else:
+                st.caption(
+                    f"{tr('source')}: {uploaded.name} · {tr('duration')}: {len(audio) / TARGET_SR:.2f} s · "
+                    f"{tr('original_rate')}: {original_sr:,} Hz → {TARGET_SR:,} Hz"
+                )
+                st.audio(file_bytes, format="audio/wav")
+                if st.button(tr("run"), type="primary", use_container_width=True, disabled=(not selected)):
+                    try:
+                        with st.spinner(tr("analyzing")):
+                            models = cached_model_bundle(str(MODEL_DIR), tuple(selected))
+                            scan_result = analyze_recording(audio, models, threshold=threshold)
+                        st.session_state.last_result = scan_result
+                        st.session_state.last_audio = audio
+                        st.session_state.last_threshold = float(threshold)
+                        st.session_state.history.insert(0, {
+                            "file": uploaded.name,
+                            tr("created"): datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            tr("duration"): round(scan_result["duration_s"], 2),
+                            tr("detectors_run"): len(scan_result["events"]),
+                            tr("events"): sum(len(v) for v in scan_result["events"].values()),
+                        })
+                        st.success(tr("analysis_complete"))
+                    except Exception as exc:
+                        st.error(f"Analysis failed: {exc}")
+
+                if st.session_state.get("active_upload_token") == upload_token:
+                    current_result = st.session_state.get("last_result")
+                    current_audio = st.session_state.get("last_audio")
+                    if current_result is not None and current_audio is not None:
+                        show_results(
+                            current_result,
+                            current_audio,
+                            st.session_state.get("last_threshold", threshold),
+                        )
+        except Exception:
+            st.error(tr("invalid_audio"))
+    else:
+        st.session_state.pop("last_result", None)
+        st.session_state.pop("last_audio", None)
+        st.session_state.pop("active_upload_token", None)
+        st.info(tr("need_audio"))
+
+    if not available:
+        st.warning(tr("no_detectors"))
+    elif not selected:
+        st.info("Select at least one available detector to run the analysis.")
+
+    if current_result is None and st.session_state.get("active_upload_token"):
+        current_result = st.session_state.get("last_result")
+        current_audio = st.session_state.get("last_audio")
+    render_species_stage(current_result, current_audio, species_exists)
+
+
+def render_research() -> None:
+    st.markdown(f"## {tr('research_title')}")
+    st.write(tr("research_body"))
+    benchmark_path = MODEL_DIR / "snr_robustness_results.csv"
+    if benchmark_path.is_file():
+        benchmark = pd.read_csv(benchmark_path)
+        metric = st.selectbox(
+            tr("metric"),
+            ["accuracy", "precision", "recall", "macro_f1", "roc_auc"],
+            format_func=lambda value: {
+                "accuracy": "Accuracy",
+                "precision": "Precision",
+                "recall": "Recall",
+                "macro_f1": "Macro-F1",
+                "roc_auc": "ROC-AUC",
+            }[value],
+        )
+        pivot = benchmark.pivot(index="condition", columns="model", values=metric)
+        order = ["20 dB", "15 dB", "10 dB", "5 dB", "0 dB", "-5 dB"]
+        pivot = pivot.reindex(order)
+        pivot.columns = [
+            {
+                "Fixed-mix reference": MODEL_NAMES["fixed"][st.session_state.language],
+                "Random-SNR control": MODEL_NAMES["random"][st.session_state.language],
+                "SNR curriculum": MODEL_NAMES["curriculum"][st.session_state.language],
+            }.get(column, column)
+            for column in pivot.columns
+        ]
+        st.dataframe((pivot * 100).round(2).astype(str) + "%", use_container_width=True)
+    else:
+        st.warning("Benchmark CSV not found / Berkas benchmark CSV tidak ditemukan.")
+    st.markdown(f"<div class='info-strip warning-strip'>{tr('snr_note')}</div>", unsafe_allow_html=True)
+
+
+def render_guide() -> None:
+    st.markdown(f"## {tr('guide_title')}")
+    guide_items = [
+        ("what_detector", "what_detector_p"),
+        ("what_species", "what_species_p"),
+        ("what_snr", "what_snr_p"),
+        ("limitations", "limitations_p"),
+    ]
+    for heading_key, body_key in guide_items:
+        with st.expander(tr(heading_key)):
+            st.write(tr(body_key))
+
+
+def main() -> None:
     if "language" not in st.session_state:
         st.session_state.language = "English"
+    if "page" not in st.session_state:
+        st.session_state.page = "overview"
     if "history" not in st.session_state:
         st.session_state.history = []
 
+    status = detector_status()
+    species_exists = (MODEL_DIR / SPECIES_MODEL_FILE).is_file()
+
     with st.sidebar:
-        st.markdown("## ◈ SONARA")
+        st.markdown("# ◈ SONARA")
         st.caption(tr("mission"))
-        st.session_state.language = st.radio(
-            tr("language"), ["English", "Bahasa Indonesia"],
-            index=0 if st.session_state.language == "English" else 1,
-            horizontal=False,
-        )
+        st.radio(tr("language"), LANGUAGES, key="language", label_visibility="visible")
         st.divider()
-        st.markdown(f"**{tr('nav')}**")
-        nav_items = [tr("home"), tr("explore"), tr("discoveries"), tr("lab"), tr("guide")]
-        requested_page = st.session_state.pop("nav_jump", None)
-        default_index = nav_items.index(requested_page) if requested_page in nav_items else 0
+        st.markdown("**MISSION MENU**")
         page = st.radio(
             "Navigation",
-            nav_items,
-            index=default_index,
+            options=list(PAGE_LABELS[st.session_state.language].keys()),
+            format_func=lambda key: PAGE_LABELS[st.session_state.language][key],
+            key="page",
             label_visibility="collapsed",
         )
         st.divider()
-        status = model_status()
-        render_model_status(status)
+        render_status(status, species_exists)
         st.divider()
         st.markdown(f"**{tr('about')}**")
-        st.caption(tr("about_p"))
+        st.caption(tr("about_body"))
 
     render_header()
-
-    if page == tr("home"):
-        st.markdown(
-            f"""
-            <div class="hero-panel">
-              <div class="hero-kicker">MISSION 01 <span>·</span> HYDROACOUSTIC SURVEY</div>
-              <h1>{tr('home_h')}</h1>
-              <p>{tr('home_p')}</p>
-              <div class="sonar-wrap">
-                <div class="sonar-ring ring-a"></div><div class="sonar-ring ring-b"></div>
-                <div class="sonar-ring ring-c"></div><div class="sonar-core">◈</div>
-                <div class="sonar-sweep"></div>
-                <div class="sonar-label label-a">96 kHz / ARRAY</div>
-                <div class="sonar-label label-b">PASSIVE LISTENING</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button(tr("start"), type="primary", use_container_width=True):
-            st.session_state["nav_jump"] = tr("explore")
-            st.rerun()
-        st.markdown(f"### {tr('notice_title')}")
-        st.info(tr("notice"))
-        c1, c2, c3 = st.columns(3)
-        c1.metric(tr("sample_rate"), "96,000 Hz")
-        c2.metric(tr("window"), "2.0 s")
-        c3.metric(tr("hop"), "1.0 s")
-        st.markdown(f"### {tr('how')}")
-        if st.session_state.language == "English":
-            step_html = """
-            <div class="steps-grid">
-              <div class="step-card"><span>01</span><b>UPLOAD</b><p>Choose an underwater WAV recording.</p></div>
-              <div class="step-card"><span>02</span><b>SCAN</b><p>Three detector variants examine overlapping windows.</p></div>
-              <div class="step-card"><span>03</span><b>REVIEW</b><p>Inspect candidate events, scores, and audio clips.</p></div>
-            </div>"""
-        else:
-            step_html = """
-            <div class="steps-grid">
-              <div class="step-card"><span>01</span><b>UNGGAH</b><p>Pilih rekaman bawah laut berformat WAV.</p></div>
-              <div class="step-card"><span>02</span><b>PINDAI</b><p>Tiga varian detektor memeriksa jendela audio yang saling bertumpang tindih.</p></div>
-              <div class="step-card"><span>03</span><b>TINJAU</b><p>Periksa kandidat kejadian, skor, dan klip audio.</p></div>
-            </div>"""
-        st.markdown(step_html, unsafe_allow_html=True)
-
-    elif page == tr("explore"):
-        st.markdown(f"### {tr('explore_h')}")
-        st.write(tr("explore_p"))
-        uploaded = st.file_uploader(tr("upload"), type=["wav"], help=tr("upload_help"))
-        threshold = st.slider(tr("threshold"), 0.05, 0.95, 0.50, 0.05)
-        available = [k for k, v in status.items() if v]
-        selected = st.multiselect(
-            tr("select_model"),
-            options=available,
-            default=available,
-            format_func=lambda k: {"fixed": tr("fixed"), "random": tr("random"), "curriculum": tr("curriculum")}[k],
-        )
-        if uploaded is not None:
-            if st.session_state.get("active_upload_name") != uploaded.name:
-                st.session_state.pop("last_result", None)
-                st.session_state.pop("last_audio", None)
-                st.session_state.active_upload_name = uploaded.name
-            try:
-                preview_audio, original_sr = load_audio(uploaded)
-                if len(preview_audio) / TARGET_SR < WINDOW_SECONDS:
-                    st.error(tr("short_audio"))
-                else:
-                    st.caption(
-                        f"{tr('source')}: {uploaded.name} · {tr('duration')}: {len(preview_audio)/TARGET_SR:.2f} s · "
-                        f"{tr('sample_rate')}: {original_sr:,} → {TARGET_SR:,} Hz · "
-                        f"{tr('peak')}: {np.max(np.abs(preview_audio)):.3f}"
-                    )
-                    st.audio(uploaded.getvalue(), format="audio/wav")
-                    if st.button(tr("run"), type="primary", disabled=not selected):
-                        try:
-                            with st.spinner(tr("analyzing")):
-                                models = load_model_bundle(MODEL_DIR, selected)
-                                result = analyze_recording(preview_audio, models, threshold=threshold)
-                            st.session_state.last_result = result
-                            st.session_state.last_audio = preview_audio
-                            st.session_state.history.insert(0, {
-                                "file": uploaded.name,
-                                "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "duration_s": result["duration_s"],
-                                "events": sum(len(v) for v in result["events"].values()),
-                            })
-                            st.success(tr("analysis_complete"))
-                        except Exception as exc:
-                            st.error(f"Analysis failed: {exc}")
-                    if "last_result" in st.session_state:
-                        show_results(st.session_state.last_result, st.session_state.last_audio, threshold)
-            except Exception:
-                st.error(tr("invalid_audio"))
-        else:
-            st.info(tr("need_audio"))
-        if not available:
-            st.warning(tr("need_models"))
-
-        st.divider()
-        st.markdown(f"### {tr('species_h')}")
-        st.warning(tr("species_warning"))
-        if (MODEL_DIR / SPECIES_MODEL_FILE).exists() and "last_audio" in st.session_state:
-            if st.button(tr("species_run")):
-                try:
-                    species_model = load_model_bundle(MODEL_DIR, ["species"])["species"]
-                    best = make_species_prediction(
-                        st.session_state.last_audio, species_model,
-                        metadata_path=MODEL_DIR / "experiment_metadata.json"
-                    )
-                    st.metric(tr("species_result"), f"{best['label']} · {best['probability']:.3f}")
-                    st.caption("Scores are model outputs, not calibrated probabilities or confirmed taxonomy.")
-                except Exception as exc:
-                    st.error(f"Species inference failed: {exc}")
-        else:
-            st.caption(tr("species_missing"))
-
-    elif page == tr("discoveries"):
-        st.markdown(f"### {tr('history_h')}")
+    if page == "overview":
+        render_overview()
+    elif page == "analysis":
+        render_analysis(status, species_exists)
+    elif page == "history":
+        st.markdown(f"## {tr('history_title')}")
         if not st.session_state.history:
             st.info(tr("history_empty"))
         else:
             st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True, hide_index=True)
-            if st.button("Clear session log / Hapus log sesi"):
+            if st.button(tr("clear_history")):
                 st.session_state.history = []
                 st.rerun()
+    elif page == "research":
+        render_research()
+    elif page == "guide":
+        render_guide()
 
-    elif page == tr("lab"):
-        st.markdown(f"### {tr('lab_h')}")
-        st.write(tr("lab_p"))
-        benchmark_path = MODEL_DIR / "snr_robustness_results.csv"
-        if benchmark_path.exists():
-            benchmark = pd.read_csv(benchmark_path)
-            metric = st.selectbox(
-                "Benchmark metric / Metrik benchmark",
-                ["accuracy", "precision", "recall", "macro_f1", "roc_auc"],
-                format_func=lambda x: {
-                    "accuracy": "Accuracy / Akurasi",
-                    "precision": "Precision",
-                    "recall": "Recall",
-                    "macro_f1": "Macro-F1",
-                    "roc_auc": "ROC-AUC",
-                }[x],
-            )
-            pivot = benchmark.pivot(index="condition", columns="model", values=metric)
-            order = ["20 dB", "15 dB", "10 dB", "5 dB", "0 dB", "-5 dB"]
-            pivot = pivot.reindex(order)
-            pivot.columns = [
-                {
-                    "Fixed-mix reference": tr("fixed"),
-                    "Random-SNR control": tr("random"),
-                    "SNR curriculum": tr("curriculum"),
-                }.get(col, col) for col in pivot.columns
-            ]
-            st.dataframe((pivot * 100).round(2).astype(str) + "%", use_container_width=True)
-        else:
-            st.warning("Benchmark CSV not found / Berkas benchmark CSV tidak ditemukan.")
-        st.caption(tr("snr_note"))
-        st.info("Preliminary demo-subset results only. Confirm the evaluation split and measured waveform SNR before making comparative claims.")
-
-    elif page == tr("guide"):
-        st.markdown(f"### {tr('field_h')}")
-        st.write(tr("field_p"))
-        for h, p in [
-            (tr("what_detection"), tr("what_detection_p")),
-            (tr("what_snr"), tr("what_snr_p")),
-            (tr("what_spectrogram"), tr("what_spectrogram_p")),
-            (tr("limitations"), tr("limitations_p")),
-        ]:
-            with st.expander(h):
-                st.write(p)
-
-    st.divider()
-    st.caption(tr("footer"))
+    st.markdown(f"<div class='footer-line'>{tr('footer')}</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
-    # Honour a navigation request made by the home CTA.
     main()
