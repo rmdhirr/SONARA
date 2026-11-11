@@ -1,0 +1,56 @@
+{
+  "project": "CetusID-R",
+  "paper": "Frainer et al. (2023), DOI:10.1016/j.ecoinf.2023.102291",
+  "dataset": "Zenodo record 8074949, CetusID_Demo.zip (demonstration subset)",
+  "sample_rate_hz": 96000,
+  "window_seconds": 2.0,
+  "detection_spectrogram_dpi": 70,
+  "species_spectrogram_dpi": 90,
+  "snr_augmentation_probability": 0.3,
+  "random_snr_control_values_db": [
+    20,
+    15,
+    10,
+    5,
+    0,
+    -5
+  ],
+  "snr_curriculum_stages": [
+    {
+      "snr_db": [
+        20,
+        15
+      ],
+      "epochs": 5
+    },
+    {
+      "snr_db": [
+        15,
+        10
+      ],
+      "epochs": 5
+    },
+    {
+      "snr_db": [
+        10,
+        5,
+        0
+      ],
+      "epochs": 5
+    },
+    {
+      "snr_db": [
+        5,
+        0,
+        -5
+      ],
+      "epochs": 5
+    }
+  ],
+  "species_classes": [
+    "Delphinus_delphis",
+    "Sousa_plumbea",
+    "Tursiops_aduncus"
+  ],
+  "warning": "Demo-subset results are not directly comparable to the paper's full independent test benchmarks; any window-level fallback split is not independent-recording validation."
+}
