@@ -52,5 +52,7 @@
     "Sousa_plumbea",
     "Tursiops_aduncus"
   ],
-  "warning": "Demo-subset results are not directly comparable to the paper's full independent test benchmarks; any window-level fallback split is not independent-recording validation."
+  "warning": "Demo-subset results are not directly comparable to the paper's full independent test benchmarks; any window-level fallback split is not independent-recording validation.",
+  "application_project": "SONARA",
+  "model_artifact_lineage": "Trained weights from the supplied research export; packaged under Sonara artifact filenames without re-training or modifying weights."
 }
