@@ -238,7 +238,7 @@ COPY = {
         "hero_body": "SONARA scans underwater WAV recordings for candidate dolphin vocalisations. It is a focused dolphin-acoustics tool — not a general ocean-sound classifier.",
         "hero_chip": "PRIMARY TASK: VOCALISATION / BACKGROUND DETECTION",
         "notice_title": "READ THIS BEFORE INTERPRETING A DETECTION",
-        "notice": "A positive result is a candidate dolphin-vocalisation window, not proof of a dolphin encounter. Review the audio and treat model scores as screening outputs.",
+        "notice": "A positive result is a candidate dolphin-vocalisation window, not proof of a dolphin encounter. Review the audio before drawing conclusions.",
         "how": "THREE-STEP WORKFLOW",
         "step1": "UPLOAD",
         "step1p": "Add an underwater WAV recording.",
@@ -268,22 +268,19 @@ COPY = {
         "no_events": "No windows crossed the selected threshold. This does not establish that dolphin vocalisations are absent.",
         "some_events": "Candidate dolphin-vocalisation windows were detected. Review the clips before drawing conclusions.",
         "timeline": "Window-level detection timeline",
-        "details": "Window-level scores and exports",
+        "details": "Window-level results and exports",
         "start": "Start (s)",
         "end": "End (s)",
-        "peak": "Peak model score",
         "download_csv": "Download window results (CSV)",
         "download_json": "Download analysis report (JSON)",
         "inspect_event": "Choose a candidate event to listen to",
         "download_clip": "Download candidate event WAV",
         "species_title": "EXPERIMENTAL SPECIES CLASSIFICATION",
-        "species_body": "This optional second stage scores a selected candidate event against three trained labels: Delphinus delphis, Sousa plumbea, and Tursiops aduncus.",
-        "species_warning": "EXPERIMENTAL / LOW VALIDATION: the current reimplementation reported 33.3% validation accuracy on its demonstration subset. This output is not reliable species identification and must not be used as a biological conclusion.",
+        "species_body": "This optional second stage classifies a selected candidate event into one of three trained labels: Delphinus delphis, Sousa plumbea, and Tursiops aduncus.",
         "species_event": "Candidate event to classify",
         "species_run": "RUN EXPERIMENTAL SPECIES MODEL",
-        "species_no_events": "Run detection first and select a candidate event. Species scoring is only offered on detected event clips.",
-        "species_result": "Highest model score (not calibrated)",
-        "species_scores": "Scores for the three trained labels",
+        "species_no_events": "Run detection first and select a candidate event. Species classification is only available for detected event clips.",
+        "species_result": "Model prediction",
         "species_missing": "The experimental species model file is missing.",
         "status": "MODEL FILE STATUS",
         "detector_status": "Detectors",
@@ -301,7 +298,7 @@ COPY = {
         "what_detector": "What does the main detector do?",
         "what_detector_p": "It performs binary detection: dolphin-vocalisation-like audio versus the negative/background class represented during training. It does not identify arbitrary ocean sounds, and it does not tell you which species produced every positive window.",
         "what_species": "What does the optional species stage do?",
-        "what_species_p": "It is a separate, experimental model with three output labels: Delphinus delphis (common dolphin), Sousa plumbea (Indian Ocean humpback dolphin), and Tursiops aduncus (Indo-Pacific bottlenose dolphin). The current model's reported 33.3% validation accuracy on the demonstration subset is too limited for dependable taxonomic identification.",
+        "what_species_p": "It is a separate model with three output labels: Delphinus delphis (common dolphin), Sousa plumbea (Indian Ocean humpback dolphin), and Tursiops aduncus (Indo-Pacific bottlenose dolphin).",
         "what_snr": "What is SNR?",
         "what_snr_p": "Signal-to-noise ratio compares signal power with background-noise power. Lower SNR means a signal is more heavily masked by noise. The SNR curriculum is a training strategy for the detector, not a separate sound category.",
         "limitations": "Scientific limitations",
@@ -316,7 +313,6 @@ COPY = {
         "original_rate": "Original sample rate",
         "all_models": "Select all available detectors",
         "model_name": "Detector",
-        "score": "Score",
         "created": "Scanned at",
         "clear_notice": "New recording selected. Previous results have been cleared.",
     },
@@ -330,7 +326,7 @@ COPY = {
         "hero_body": "SONARA memindai rekaman WAV bawah air untuk mencari kandidat vokalisasi lumba-lumba. Ini adalah alat akustik khusus lumba-lumba — bukan pengklasifikasi semua suara laut.",
         "hero_chip": "TUGAS UTAMA: DETEKSI VOKALISASI / LATAR",
         "notice_title": "BACA SEBELUM MENAFSIRKAN HASIL DETEKSI",
-        "notice": "Hasil positif adalah kandidat jendela vokalisasi lumba-lumba, bukan bukti pasti adanya perjumpaan dengan lumba-lumba. Dengarkan audio dan perlakukan skor model sebagai hasil penyaringan.",
+        "notice": "Hasil positif adalah kandidat jendela vokalisasi lumba-lumba, bukan bukti pasti adanya perjumpaan dengan lumba-lumba. Dengarkan audio sebelum menarik kesimpulan.",
         "how": "ALUR KERJA TIGA LANGKAH",
         "step1": "UNGGAH",
         "step1p": "Masukkan rekaman WAV bawah air.",
@@ -360,22 +356,19 @@ COPY = {
         "no_events": "Tidak ada jendela yang melewati ambang terpilih. Ini tidak membuktikan bahwa vokalisasi lumba-lumba tidak ada.",
         "some_events": "Kandidat jendela vokalisasi lumba-lumba terdeteksi. Tinjau klip sebelum menarik kesimpulan.",
         "timeline": "Linimasa deteksi per jendela",
-        "details": "Skor per jendela dan ekspor",
+        "details": "Hasil per jendela dan ekspor",
         "start": "Mulai (dtk)",
         "end": "Selesai (dtk)",
-        "peak": "Skor model puncak",
         "download_csv": "Unduh hasil jendela (CSV)",
         "download_json": "Unduh laporan analisis (JSON)",
         "inspect_event": "Pilih kandidat kejadian untuk didengarkan",
         "download_clip": "Unduh WAV kandidat kejadian",
         "species_title": "KLASIFIKASI SPESIES EKSPERIMENTAL",
-        "species_body": "Tahap kedua opsional ini memberi skor pada kandidat kejadian terpilih terhadap tiga label pelatihan: Delphinus delphis, Sousa plumbea, dan Tursiops aduncus.",
-        "species_warning": "EKSPERIMENTAL / VALIDASI RENDAH: implementasi saat ini melaporkan akurasi validasi 33,3% pada subset demonstrasi. Keluaran ini bukan identifikasi spesies yang andal dan tidak boleh digunakan sebagai kesimpulan biologis.",
+        "species_body": "Tahap kedua opsional ini mengklasifikasikan kandidat kejadian terpilih ke dalam salah satu dari tiga label pelatihan: Delphinus delphis, Sousa plumbea, dan Tursiops aduncus.",
         "species_event": "Kandidat kejadian untuk diklasifikasikan",
         "species_run": "JALANKAN MODEL SPESIES EKSPERIMENTAL",
-        "species_no_events": "Jalankan deteksi terlebih dahulu dan pilih kandidat kejadian. Skor spesies hanya tersedia untuk klip kejadian yang terdeteksi.",
-        "species_result": "Skor model tertinggi (tidak terkalibrasi)",
-        "species_scores": "Skor untuk tiga label pelatihan",
+        "species_no_events": "Jalankan deteksi terlebih dahulu dan pilih kandidat kejadian. Klasifikasi spesies hanya tersedia untuk klip kejadian yang terdeteksi.",
+        "species_result": "Prediksi model",
         "species_missing": "Berkas model spesies eksperimental tidak ditemukan.",
         "status": "STATUS BERKAS MODEL",
         "detector_status": "Detektor",
@@ -393,7 +386,7 @@ COPY = {
         "what_detector": "Apa fungsi detektor utama?",
         "what_detector_p": "Detektor melakukan deteksi biner: audio yang menyerupai vokalisasi lumba-lumba dibandingkan kelas negatif/latar yang direpresentasikan selama pelatihan. Model ini tidak mengidentifikasi semua jenis suara laut dan tidak menentukan spesies dari setiap jendela positif.",
         "what_species": "Apa fungsi tahap spesies opsional?",
-        "what_species_p": "Ini adalah model terpisah yang masih eksperimental dengan tiga label keluaran: Delphinus delphis (lumba-lumba biasa), Sousa plumbea (lumba-lumba bungkuk Samudra Hindia), dan Tursiops aduncus (lumba-lumba hidung botol Indo-Pasifik). Akurasi validasi model saat ini sebesar 33,3% pada subset demonstrasi terlalu terbatas untuk identifikasi taksonomi yang dapat diandalkan.",
+        "what_species_p": "Ini adalah model terpisah dengan tiga label keluaran: Delphinus delphis (lumba-lumba biasa), Sousa plumbea (lumba-lumba bungkuk Samudra Hindia), dan Tursiops aduncus (lumba-lumba hidung botol Indo-Pasifik).",
         "what_snr": "Apa itu SNR?",
         "what_snr_p": "Signal-to-noise ratio membandingkan daya sinyal dengan daya derau latar. SNR yang lebih rendah berarti sinyal semakin tertutup derau. Kurikulum SNR merupakan strategi pelatihan detektor, bukan kategori suara tersendiri.",
         "limitations": "Keterbatasan ilmiah",
@@ -408,7 +401,6 @@ COPY = {
         "original_rate": "Frekuensi sampling awal",
         "all_models": "Pilih semua detektor yang tersedia",
         "model_name": "Detektor",
-        "score": "Skor",
         "created": "Waktu pemindaian",
         "clear_notice": "Rekaman baru dipilih. Hasil sebelumnya telah dihapus.",
     },
@@ -477,8 +469,8 @@ def plot_timeline(window_df: pd.DataFrame):
             mode="markers",
             marker={"size": 9, "color": colors.get(model_key, "#edf8f2"), "opacity": .88,
                      "line": {"width": 1, "color": "#07131f"}},
-            customdata=np.stack([group["end_s"], group["score"]], axis=-1),
-            hovertemplate="Start: %{x:.2f}s<br>End: %{customdata[0]:.2f}s<br>Score: %{customdata[1]:.3f}<extra></extra>",
+            customdata=group["end_s"],
+            hovertemplate="Start: %{x:.2f}s<br>End: %{customdata:.2f}s<extra></extra>",
             name=MODEL_NAMES[model_key][st.session_state.language],
         ))
     fig.update_layout(
@@ -505,7 +497,6 @@ def flatten_window_results(result: dict) -> pd.DataFrame:
                 "detector": MODEL_NAMES[model_key][st.session_state.language],
                 "start_s": row["start_s"],
                 "end_s": row["end_s"],
-                "score": row["probability"],
                 "candidate": row["detected"],
             })
     return pd.DataFrame(rows)
@@ -580,17 +571,16 @@ def show_results(result: dict, audio: np.ndarray, threshold: float) -> None:
 
     with st.expander(tr("details")):
         st.dataframe(
-            window_df.drop(columns=["model_key"]).rename(columns={
+            window_df.drop(columns=["model_key", "score"], errors="ignore").rename(columns={
                 "detector": tr("model_name"),
                 "start_s": tr("start"),
                 "end_s": tr("end"),
-                "score": tr("score"),
                 "candidate": "Candidate",
             }),
             use_container_width=True,
             hide_index=True,
         )
-        csv_data = window_df.drop(columns=["model_key"]).to_csv(index=False).encode("utf-8")
+        csv_data = window_df.drop(columns=["model_key", "score"], errors="ignore").to_csv(index=False).encode("utf-8")
         st.download_button(tr("download_csv"), csv_data, "sonara_detection_windows.csv", "text/csv")
         payload = {
             "project": "SONARA",
@@ -725,7 +715,6 @@ def render_species_stage(result: dict | None, audio: np.ndarray | None, species_
     st.divider()
     st.markdown(f"<div class='section-kicker'>{tr('species_title')}</div>", unsafe_allow_html=True)
     st.write(tr("species_body"))
-    st.markdown(f"<div class='info-strip warning-strip'>{tr('species_warning')}</div>", unsafe_allow_html=True)
     if not species_exists:
         st.warning(tr("species_missing"))
         return
@@ -759,7 +748,7 @@ def render_species_stage(result: dict | None, audio: np.ndarray | None, species_
             st.error("Selected candidate is shorter than the model's 2-second input window.")
             return
         try:
-            with st.spinner("Scoring selected candidate event…"):
+            with st.spinner("Classifying selected candidate event…"):
                 species_model = cached_model_bundle(str(MODEL_DIR), ("species",))["species"]
                 prediction = make_species_prediction(
                     event_audio,
@@ -767,12 +756,6 @@ def render_species_stage(result: dict | None, audio: np.ndarray | None, species_
                     metadata_path=MODEL_DIR / "experiment_metadata.json",
                 )
             st.metric(tr("species_result"), prediction["label"].replace("_", " "))
-            st.caption(f"{tr('score')}: {prediction['probability']:.3f} · Model output, not calibrated.")
-            score_rows = []
-            labels = ["Delphinus delphis", "Sousa plumbea", "Tursiops aduncus"]
-            for label, score in zip(labels, prediction["scores"]):
-                score_rows.append({"Species label": label, "Model score": float(score)})
-            st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
         except Exception as exc:
             st.error(f"Species inference failed: {exc}")
 
