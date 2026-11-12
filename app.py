@@ -270,6 +270,7 @@ COPY = {
         "details": "Window-level results and exports",
         "start": "Start (s)",
         "end": "End (s)",
+        "peak": "Peak probability",
         "download_csv": "Download window results (CSV)",
         "download_json": "Download analysis report (JSON)",
         "inspect_event": "Choose a candidate event to listen to",
@@ -358,6 +359,7 @@ COPY = {
         "details": "Hasil per jendela dan ekspor",
         "start": "Mulai (dtk)",
         "end": "Selesai (dtk)",
+        "peak": "Probabilitas puncak",
         "download_csv": "Unduh hasil jendela (CSV)",
         "download_json": "Unduh laporan analisis (JSON)",
         "inspect_event": "Pilih kandidat kejadian untuk didengarkan",
@@ -414,7 +416,8 @@ MODEL_NAMES = {
 
 def tr(key: str) -> str:
     lang = st.session_state.get("language", "English")
-    return COPY[lang][key]
+    language_copy = COPY.get(lang, COPY["English"])
+    return language_copy.get(key, COPY["English"].get(key, key))
 
 
 def detector_status() -> dict[str, bool]:
@@ -905,7 +908,7 @@ def render_analysis(status: dict[str, bool], species_exists: bool) -> None:
                             st.session_state.get("last_threshold", threshold),
                         )
         except Exception as exc:
-            st.error(tr("invalid_audio"))
+            st.error("Audio processing or results display failed.")
             with st.expander("Technical details (for debugging)"):
                 st.code(f"{type(exc).__name__}: {exc}")
     else:
