@@ -7,7 +7,6 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-import librosa
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -439,18 +438,100 @@ def render_status(status: dict[str, bool], species_exists: bool) -> None:
 
 
 def load_audio(file_bytes: bytes) -> tuple[np.ndarray, int]:
-    """Decode WAV, convert to mono, and resample to the model's 96 kHz input rate."""
+    """Decode an uploaded WAV, convert it to mono, and resample to TARGET_SR.
+
+    SoundFile is the primary decoder. scipy.io.wavfile is used as a fallback
+    for PCM WAV variants that libsndfile cannot read.
+    """
+    if not file_bytes:
+        raise ValueError("The uploaded file is empty.")
+
+    decode_errors = []
+
+    # Primary decoder: supports common PCM and floating-point WAV encodings.
     try:
-        raw, original_sr = sf.read(io.BytesIO(file_bytes), dtype="float32", always_2d=True)
-        if raw.size == 0 or original_sr <= 0:
-            raise ValueError("Empty or invalid WAV audio")
-        mono = np.mean(raw, axis=1).astype(np.float32)
-        if original_sr != TARGET_SR:
-            mono = librosa.resample(mono, orig_sr=original_sr, target_sr=TARGET_SR)
-        mono = np.nan_to_num(mono, nan=0.0, posinf=0.0, neginf=0.0)
-        return mono, int(original_sr)
+        raw, original_sr = sf.read(
+            io.BytesIO(file_bytes),
+            dtype="float32",
+            always_2d=True,
+        )
     except Exception as exc:
-        raise ValueError(str(exc)) from exc
+        decode_errors.append(f"SoundFile: {type(exc).__name__}: {exc}")
+        raw = None
+        original_sr = None
+
+    # Fallback decoder for WAV files not accepted by SoundFile.
+    if raw is None:
+        try:
+            from scipy.io import wavfile
+
+            original_sr, raw = wavfile.read(io.BytesIO(file_bytes))
+
+            raw = np.asarray(raw)
+            if raw.ndim == 1:
+                raw = raw[:, np.newaxis]
+            elif raw.ndim != 2:
+                raise ValueError(
+                    f"Unsupported WAV channel layout: {raw.shape}"
+                )
+
+            if np.issubdtype(raw.dtype, np.floating):
+                raw = raw.astype(np.float32)
+            elif raw.dtype == np.uint8:
+                # 8-bit PCM WAV is unsigned.
+                raw = (raw.astype(np.float32) - 128.0) / 128.0
+            elif np.issubdtype(raw.dtype, np.signedinteger):
+                info = np.iinfo(raw.dtype)
+                scale = float(max(abs(info.min), info.max + 1))
+                raw = raw.astype(np.float32) / scale
+            else:
+                raise ValueError(f"Unsupported WAV sample type: {raw.dtype}")
+
+        except Exception as exc:
+            decode_errors.append(f"SciPy WAV decoder: {type(exc).__name__}: {exc}")
+            details = " | ".join(decode_errors)
+            raise ValueError(
+                "Could not decode this file as WAV. "
+                f"Decoder details: {details}"
+            ) from exc
+
+    if original_sr is None or int(original_sr) <= 0:
+        raise ValueError(f"Invalid WAV sample rate: {original_sr!r}")
+
+    raw = np.asarray(raw, dtype=np.float32)
+    if raw.size == 0 or raw.ndim != 2 or raw.shape[0] == 0:
+        raise ValueError("The WAV contains no audio samples.")
+
+    # Replace invalid samples before channel mixing/resampling.
+    raw = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
+    mono = np.mean(raw, axis=1, dtype=np.float32)
+
+    if mono.size == 0:
+        raise ValueError("The WAV contains no usable audio samples.")
+
+    original_sr = int(original_sr)
+    if original_sr != int(TARGET_SR):
+        # Polyphase resampling is robust and avoids librosa's optional
+        # resampler/backend compatibility issues on hosted environments.
+        from math import gcd
+        from scipy.signal import resample_poly
+
+        divisor = gcd(original_sr, int(TARGET_SR))
+        up = int(TARGET_SR) // divisor
+        down = original_sr // divisor
+        mono = resample_poly(mono, up, down).astype(np.float32)
+
+    mono = np.nan_to_num(
+        mono,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    ).astype(np.float32, copy=False)
+
+    if mono.size == 0:
+        raise ValueError("Audio decoding/resampling produced an empty signal.")
+
+    return mono, original_sr
 
 
 @st.cache_resource(show_spinner=False)
@@ -823,8 +904,10 @@ def render_analysis(status: dict[str, bool], species_exists: bool) -> None:
                             current_audio,
                             st.session_state.get("last_threshold", threshold),
                         )
-        except Exception:
+        except Exception as exc:
             st.error(tr("invalid_audio"))
+            with st.expander("Technical details (for debugging)"):
+                st.code(f"{type(exc).__name__}: {exc}")
     else:
         st.session_state.pop("last_result", None)
         st.session_state.pop("last_audio", None)
